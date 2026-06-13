@@ -1393,7 +1393,14 @@
         <div class="checkbox${t.completed ? ' checked' : ''}" onclick="toggleTodo('${t.id}')"></div>
         <div class="todo-body">
           <div class="todo-text" onclick="startEditTodo('${t.id}')">${escHtml(t.title)}</div>
-          ${showProgress ? `
+          ${t.completed ? `
+          <div class="todo-progress-row" style="cursor:default;opacity:0.7">
+            <div class="todo-progress-track">
+              <div class="todo-progress-fill" style="width:100%"></div>
+            </div>
+            <span class="todo-progress-pct">100%</span>
+          </div>
+          ` : showProgress ? `
           <div class="todo-progress-row" onclick="event.stopPropagation(); openProgressModal('${t.id}')">
             <div class="todo-progress-track">
               <div class="todo-progress-fill" style="width:${progress}%"></div>
@@ -1570,8 +1577,9 @@
 
   /* ── Progress Modal ── */
   function openProgressModal(todoId) {
-    editingProgressTodoId = todoId
     const t = todos.find(x => x.id === todoId)
+    if (t?.completed) return
+    editingProgressTodoId = todoId
     const val = t?.progress ?? 0
     document.getElementById('progressRange').value = val
     document.getElementById('progressRangePct').textContent = val + '%'
@@ -1598,6 +1606,8 @@
     const id = editingProgressTodoId
     closeProgressModal()
     if (!id) return
+    const t = todos.find(x => x.id === id)
+    if (t?.completed) return
     try {
       await fetch(`${API}/todos/${id}`, {
         method: 'PATCH',

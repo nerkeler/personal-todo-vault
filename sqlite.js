@@ -183,6 +183,11 @@ function updateTodo(id, kwargs) {
       values.push(val);
     }
   }
+  // 进度100%自动标记完成
+  if (kwargs.progress === 100 && kwargs.completed === undefined) {
+    fields.push('completed=?');
+    values.push(1);
+  }
   if (fields.length === 0) return getTodos().find(t => t.id === id);
   values.push(id);
   db.run(`UPDATE todos SET ${fields.join(',')} WHERE id=?`, values);

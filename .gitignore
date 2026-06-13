@@ -1,6 +1,5 @@
 node_modules/
 nodemailer.tgz
 package-lock.json
-todo.db
 *.log
 .DS_Store

@@ -1,5 +1,5 @@
 {
   "dependencies": {
-    "nodemailer": "file:nodemailer.tgz"
+    "nodemailer": "^6.9.0"
   }
 }
