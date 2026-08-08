@@ -49,7 +49,8 @@ async function initDB() {
     created_at TEXT NOT NULL,
     reminder_enabled INTEGER DEFAULT 0,
     reminder_time TEXT DEFAULT '',
-    creator_email TEXT DEFAULT ''
+    creator_email TEXT DEFAULT '',
+    note_file TEXT DEFAULT ''
   )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS settings (
@@ -60,6 +61,13 @@ async function initDB() {
   db.run('CREATE INDEX IF NOT EXISTS idx_todos_cat ON todos(category_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_todos_created ON todos(created_at)');
   db.run('CREATE INDEX IF NOT EXISTS idx_todos_reminder ON todos(reminder_enabled, reminder_time)');
+
+  // 兼容旧库：为已存在的 todos 表补充 note_file 列
+  const cols = db.exec(`PRAGMA table_info(todos)`);
+  const colNames = (cols[0]?.values || []).map(r => r[1]);
+  if (!colNames.includes('note_file')) {
+    db.run(`ALTER TABLE todos ADD COLUMN note_file TEXT DEFAULT ''`);
+  }
 
   // 初始化默认分类
   const existing = db.exec('SELECT COUNT(*) FROM categories')[0].values[0][0];
@@ -149,14 +157,15 @@ function getTodos(categoryId) {
     createdAt: r.created_at || null,
     completed: !!r.completed,
     reminder_enabled: !!r.reminder_enabled,
+    noteFile: r.note_file || null,
   }));
 }
 
 function createTodo(title, categoryId = 'cat_default') {
   const id = require('crypto').randomBytes(8).toString('hex') + require('crypto').randomBytes(4).toString('hex');
   const now = new Date().toISOString();
-  db.run(`INSERT INTO todos (id, title, completed, category_id, progress, created_at, reminder_enabled, reminder_time, creator_email)
-    VALUES (?, ?, 0, ?, 0, ?, 0, '', '')`, [id, title, categoryId, now]);
+  db.run(`INSERT INTO todos (id, title, completed, category_id, progress, created_at, reminder_enabled, reminder_time, creator_email, note_file)
+    VALUES (?, ?, 0, ?, 0, ?, 0, '', '', '')`, [id, title, categoryId, now]);
   saveDB();
   return getTodos().find(t => t.id === id);
 }
@@ -173,6 +182,7 @@ function updateTodo(id, kwargs) {
     reminderEnabled: 'reminder_enabled',
     reminderTime: 'reminder_time',
     creatorEmail: 'creator_email',
+    noteFile: 'note_file',
   };
   for (const [jsKey, dbKey] of Object.entries(fieldMap)) {
     if (kwargs[jsKey] !== undefined) {
@@ -237,12 +247,12 @@ function migrateFromJSON(jsonFile) {
   for (const todo of (data.todos || [])) {
     try {
       db.run(`INSERT OR IGNORE INTO todos
-        (id, title, completed, category_id, progress, created_at, reminder_enabled, reminder_time, creator_email)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, title, completed, category_id, progress, created_at, reminder_enabled, reminder_time, creator_email, note_file)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [todo.id, todo.title, todo.completed ? 1 : 0,
          todo.categoryId || 'cat_default', todo.progress || 0,
          todo.createdAt || '', todo.reminderEnabled ? 1 : 0,
-         todo.reminderTime || '', todo.creatorEmail || '']);
+         todo.reminderTime || '', todo.creatorEmail || '', todo.noteFile || '']);
     } catch (e) { /* ignore dup */ }
   }
 

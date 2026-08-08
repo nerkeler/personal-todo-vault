@@ -28,7 +28,9 @@
       --radius: 12px;
       --radius-sm: 8px;
       --transition: 0.2s ease;
-      --sidebar-w: 440px;
+      --sidebar-w: max(240px, min(22vw, 440px));
+      --sidebar-min-w: 220px;
+      --sidebar-max-w: 460px;
     }
 
     [data-theme="dark"] {
@@ -211,12 +213,41 @@
       border-top: 1px solid var(--border);
     }
 
+    /* Sidebar resize handle */
+    .sidebar-resizer {
+      position: absolute;
+      top: 0; right: -5px;
+      width: 10px;
+      height: 100vh;
+      cursor: col-resize;
+      z-index: 101;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .sidebar-resizer::after {
+      content: '';
+      width: 3px;
+      height: 36px;
+      border-radius: 3px;
+      background: var(--border);
+      transition: background 0.15s;
+    }
+    .sidebar-resizer:hover::after,
+    .sidebar-resizer.dragging::after {
+      background: var(--primary);
+      height: 64px;
+    }
+    body.resizing { cursor: col-resize; user-select: none; }
+    body.resizing .sidebar-resizer { pointer-events: auto; }
+    body.resizing .sidebar-resizer::after { background: var(--primary); height: 64px; }
+
     /* ── Main ── */
     .main {
       flex: 1;
       margin-left: var(--sidebar-w);
       padding: 28px 32px 80px;
-      max-width: 720px;
+      max-width: 880px;
     }
 
     /* Header */
@@ -583,6 +614,7 @@
     }
     .todo-act-btn:hover { background: var(--border); color: var(--text); }
     .todo-act-btn.del:hover { background: var(--danger-light); color: var(--danger); }
+    .todo-act-btn.has-note { color: var(--primary); }
     .todo-act-btn.move {
       font-size: 13px;
       width: 28px; height: 28px;
@@ -772,12 +804,49 @@
     /* Move button wrapper */
 
 
+    /* ── Note Modal ── */
+    .note-modal { max-width: 780px; width: 90vw; display: flex; flex-direction: column; max-height: 85vh; }
+    .note-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .note-tabs { display: flex; gap: 4px; background: var(--bg); border-radius: 8px; padding: 3px; }
+    .note-tab { border: none; background: transparent; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; color: var(--text-2); font-weight: 500; transition: all 0.15s; }
+    .note-tab.active { background: var(--surface); color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.12); font-weight: 600; }
+    .note-save-status { font-size: 0.75rem; color: var(--text-3); }
+    .note-body { flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 280px; scrollbar-width: thin; }
+    .note-editor { display: none; width: 100%; resize: none; padding: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9rem; line-height: 1.7; background: var(--bg); color: var(--text); outline: none; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    .note-modal[data-mode="preview"] .note-preview-wrap { display: block; }
+    .note-modal[data-mode="preview"] .note-editor { display: none; }
+    .note-modal[data-mode="editor"] .note-preview-wrap { display: none; }
+    .note-modal[data-mode="editor"] .note-editor { display: block; }
+    .note-body.note-preview-wrap { padding: 20px 24px; font-size: 0.95rem; line-height: 1.75; color: var(--text); overflow-wrap: break-word; }
+
+    /* Markdown preview typography */
+    .note-preview-wrap h1, .note-preview-wrap h2, .note-preview-wrap h3, .note-preview-wrap h4 { margin: 1.1em 0 0.5em; line-height: 1.35; font-weight: 700; }
+    .note-preview-wrap h1 { font-size: 1.7em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    .note-preview-wrap h2 { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: 0.25em; }
+    .note-preview-wrap h3 { font-size: 1.15em; }
+    .note-preview-wrap h4 { font-size: 1em; }
+    .note-preview-wrap p { margin: 0.6em 0; }
+    .note-preview-wrap ul, .note-preview-wrap ol { padding-left: 1.6em; margin: 0.6em 0; }
+    .note-preview-wrap li { margin: 0.25em 0; }
+    .note-preview-wrap blockquote { border-left: 3px solid var(--primary); padding: 2px 14px; margin: 0.8em 0; color: var(--text-2); background: var(--surface-hover); border-radius: 0 6px 6px 0; }
+    .note-preview-wrap code { font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--surface-hover); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
+    .note-preview-wrap pre { background: var(--surface-hover); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 0.8em 0; }
+    .note-preview-wrap pre code { background: none; padding: 0; font-size: 0.85em; }
+    .note-preview-wrap table { border-collapse: collapse; margin: 0.8em 0; width: 100%; }
+    .note-preview-wrap th, .note-preview-wrap td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+    .note-preview-wrap th { background: var(--surface-hover); font-weight: 600; }
+    .note-preview-wrap a { color: var(--primary); }
+    .note-preview-wrap hr { border: none; border-top: 1px solid var(--border); margin: 1.2em 0; }
+    .note-preview-wrap img { max-width: 100%; border-radius: 6px; }
+    .note-preview-wrap input[type="checkbox"] { margin-right: 8px; accent-color: var(--primary); }
+
     /* ── Responsive ── */
     @media (max-width: 768px) {
       .sidebar {
         transform: translateX(-100%);
         width: min(260px, 75vw);
       }
+      .sidebar-resizer { display: none; }
       .sidebar.open { transform: translateX(0); }
       .sidebar-close { display: flex; align-items: center; justify-content: center; }
       .main { margin-left: 0; padding: 20px 16px 80px; }
@@ -811,6 +880,7 @@
         <span>＋</span> 新增分类
       </button>
     </div>
+    <div class="sidebar-resizer" id="sidebarResizer" title="拖动调整宽度"></div>
   </aside>
 
   <!-- Main content -->
@@ -1001,6 +1071,28 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="noteModal">
+  <div class="modal note-modal">
+    <div class="modal-title">
+      <span id="noteModalTitle">📄 笔记</span>
+      <button class="modal-close" onclick="closeNoteModal()">✕</button>
+    </div>
+    <div class="note-toolbar">
+      <div class="note-tabs">
+        <button class="note-tab active" id="noteTabPreview" onclick="setNoteMode('preview')">预览</button>
+        <button class="note-tab" id="noteTabEdit" onclick="setNoteMode('edit')">编辑</button>
+      </div>
+      <span class="note-save-status" id="noteSaveStatus"></span>
+    </div>
+    <div class="note-body note-preview-wrap" id="notePreview"></div>
+    <textarea class="note-body note-editor" id="noteEditor" spellcheck="false"></textarea>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeNoteModal()">取消</button>
+      <button class="modal-btn primary" onclick="saveNote()">保存文档</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const API = '/api';
   let categories = [];
@@ -1028,6 +1120,7 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     initTheme();
+    initSidebarWidth();
     loadData();
     initIconGrid();
     document.getElementById('todoInput').addEventListener('keypress', e => {
@@ -1045,6 +1138,53 @@
       }
     });
   });
+
+  /* ── Sidebar width ── */
+  function initSidebarWidth() {
+    const root = document.documentElement;
+    const cssMin = parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-min-w')) || 220;
+    const cssMax = parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-max-w')) || 460;
+    let saved = null;
+    try { saved = parseFloat(localStorage.getItem('sidebar-w')); } catch (e) {}
+    const width = saved && saved >= cssMin && saved <= cssMax
+      ? saved
+      : Math.round(Math.min(Math.max(window.innerWidth * 0.22, cssMin), cssMax));
+    root.style.setProperty('--sidebar-w', width + 'px');
+    localStorage.setItem('sidebar-w', width);
+
+    const resizer = document.getElementById('sidebarResizer');
+    if (!resizer) return;
+    let startX, startW, dragging = false;
+
+    const onMove = e => {
+      if (!dragging) return;
+      const x = e.touches ? e.touches[0].clientX : e.clientX;
+      const w = Math.round(Math.min(Math.max(startW + (x - startX), cssMin), cssMax));
+      root.style.setProperty('--sidebar-w', w + 'px');
+      localStorage.setItem('sidebar-w', w);
+      resizer.classList.add('dragging');
+    };
+    const onDown = e => {
+      dragging = true;
+      startX = e.touches ? e.touches[0].clientX : e.clientX;
+      startW = parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-w')) || startX;
+      document.body.classList.add('resizing');
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('touchmove', onMove, { passive: false });
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove('resizing');
+      resizer.classList.remove('dragging');
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('touchmove', onMove);
+    };
+    resizer.addEventListener('mousedown', onDown);
+    resizer.addEventListener('touchstart', onDown, { passive: true });
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchend', onUp);
+  }
 
   /* ── Theme ── */
   function initTheme() {
@@ -1420,6 +1560,7 @@
         </div>
         <div class="todo-actions">
           ${!t.completed ? `<button class="todo-act-btn" onclick="openReminderModal('${t.id}')" title="邮件提醒" style="${t.reminderEnabled ? 'color:var(--primary)' : ''}">${t.reminderEnabled ? '🔔' : '🔕'}</button>` : ''}
+          <button class="todo-act-btn${t.noteFile ? ' has-note' : ''}" onclick="openNoteModal('${t.id}')" title="笔记">📄</button>
           <button class="todo-act-btn" onclick="startEditTodo('${t.id}')" title="编辑">✎</button>
           <button class="todo-act-btn del" onclick="deleteTodo('${t.id}')" title="删除">✕</button>
         </div>
@@ -1758,6 +1899,185 @@
     return `${d.getMonth()+1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
   function pad(n) { return n.toString().padStart(2, '0'); }
+
+  /* ── Note modal ── */
+  let noteTodoId = null;
+  let noteMode = 'preview';
+
+  async function openNoteModal(todoId) {
+    noteTodoId = todoId;
+    const t = todos.find(x => x.id === todoId);
+    const title = t ? t.title : '笔记';
+    document.getElementById('noteModalTitle').textContent = `📄 ${title}`;
+    document.getElementById('noteSaveStatus').textContent = '';
+    setNoteMode('preview');
+    document.getElementById('noteModal').classList.add('show');
+    await loadNote(todoId);
+  }
+
+  function closeNoteModal() {
+    document.getElementById('noteModal').classList.remove('show');
+    noteTodoId = null;
+  }
+
+  async function loadNote(todoId) {
+    try {
+      const res = await fetch(`${API}/todos/${todoId}/note`);
+      const data = await res.json();
+      document.getElementById('noteEditor').value = data.content || '';
+      renderNotePreview(data.content || '');
+      const t = todos.find(x => x.id === todoId);
+      document.getElementById('noteModalTitle').textContent = `📄 ${t ? t.title : '笔记'}`;
+    } catch (e) { console.error(e); }
+  }
+
+  function setNoteMode(mode) {
+    noteMode = mode;
+    const modal = document.getElementById('noteModal');
+    modal.dataset.mode = mode === 'edit' ? 'editor' : 'preview';
+    document.getElementById('noteTabPreview').classList.toggle('active', mode !== 'edit');
+    document.getElementById('noteTabEdit').classList.toggle('active', mode === 'edit');
+    if (mode === 'edit') {
+      const ed = document.getElementById('noteEditor');
+      ed.focus();
+    }
+  }
+
+  function renderNotePreview(content) {
+    const html = renderMarkdown(content !== undefined ? content : document.getElementById('noteEditor').value);
+    document.getElementById('notePreview').innerHTML = html;
+  }
+
+  async function saveNote() {
+    if (!noteTodoId) return;
+    const content = document.getElementById('noteEditor').value;
+    document.getElementById('noteSaveStatus').textContent = '保存中…';
+    try {
+      const res = await fetch(`${API}/todos/${noteTodoId}/note`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+      const data = await res.json();
+      renderNotePreview(content);
+      const st = document.getElementById('noteSaveStatus');
+      st.textContent = '✅ 已保存';
+      setTimeout(() => { st.textContent = ''; }, 2000);
+      const t = todos.find(x => x.id === noteTodoId);
+      if (t) t.noteFile = data.noteFile;
+      render();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('noteSaveStatus').textContent = '❌ 保存失败';
+    }
+  }
+
+  /* ── Markdown renderer ── */
+  function escMd(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function inlineMd(s) {
+    return s
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      .replace(/~~([^~]+)~~/g, '<del>$1</del>');
+  }
+  function renderMarkdown(md) {
+    if (!md) return '<p style="color:var(--text-3)"><i>空白笔记，点击"编辑"开始书写</i></p>';
+    const lines = md.replace(/\r\n/g, '\n').split('\n');
+    let html = '';
+    let inCode = false, inCodeLines = [], tableRows = [];
+    const flushTable = () => {
+      if (tableRows.length < 3) { html += tableRows.join('<br>'); tableRows = []; return; }
+      const rows = tableRows.map((r, i) => {
+        if (/^\|?\s*:?-+:?\s*\|?\s*$/.test(r.trim().replace(/\s+/g, ''))) return null;
+        const cells = r.split('|').slice(1, -1);
+        const tag = i === 0 ? 'th' : 'td';
+        return `<tr>${cells.map(c => `<${tag}>${inlineMd(c.trim())}</${tag}>`).join('')}</tr>`;
+      }).filter(Boolean);
+      if (rows.length) {
+        html += `<table><thead>${rows[0]}</thead><tbody>${rows.slice(1).join('')}</tbody></table>`;
+      }
+      tableRows = [];
+    };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      if (trimmed.startsWith('```')) {
+        if (inCode) { html += `<pre><code>${escMd(inCodeLines.join('\n'))}</code></pre>`; inCodeLines = []; inCode = false; }
+        else { inCode = true; inCodeLines = []; }
+        continue;
+      }
+      if (inCode) { inCodeLines.push(line); continue; }
+      flushTable();
+      const h = trimmed.match(/^(#{1,6})\s+(.*)$/);
+      if (h) { html += `<h${h[1].length}>${inlineMd(h[2])}</h${h[1].length}>`; continue; }
+      if (tableRows.length) {
+        if (trimmed.startsWith('|')) { tableRows.push(trimmed); continue; }
+        else { flushTable(); }
+      }
+      if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+        tableRows.push(trimmed);
+        continue;
+      }
+      if (/^[-*]\s+/.test(trimmed) && !/^[-*]\s+\[[ xX]\]/.test(trimmed)) {
+        const items = [];
+        while (i < lines.length) {
+          const t2 = lines[i].trim();
+          if (t2 === '' || !/^[-*]\s+/.test(t2)) break;
+          items.push(t2.replace(/^[-*]\s+/, ''));
+          i++;
+        }
+        i--;
+        html += `<ul>${items.map(it => `<li>${inlineMd(it)}</li>`).join('')}</ul>`;
+        continue;
+      }
+      if (/^\d+\.\s+/.test(trimmed)) {
+        const items = [];
+        while (i < lines.length) {
+          const t2 = lines[i].trim();
+          if (t2 === '') break;
+          const m = t2.match(/^\d+\.\s+(.*)$/);
+          if (!m) break;
+          items.push(m[1]);
+          i++;
+        }
+        i--;
+        html += `<ol>${items.map(it => `<li>${inlineMd(it)}</li>`).join('')}</ol>`;
+        continue;
+      }
+      if (/\s*- \[[ xX]\]\s*/.test(trimmed)) {
+        const items = [];
+        while (i < lines.length) {
+          const t2 = lines[i].trim();
+          if (t2 === '') break;
+          const m = t2.match(/^- \[([ xX])\]\s*(.*)$/);
+          if (!m) break;
+          items.push(`<li><input type="checkbox" ${m[1].toLowerCase() === 'x' ? 'checked' : ''} disabled> ${inlineMd(m[2])}</li>`);
+          i++;
+        }
+        i--;
+        html += `<ul class="task-list">${items.join('')}</ul>`;
+        continue;
+      }
+      if (trimmed.startsWith('> ')) {
+        const quotes = [];
+        while (i < lines.length && lines[i].trim().startsWith('> ')) { quotes.push(lines[i].trim().slice(2)); i++; }
+        i--;
+        html += `<blockquote>${quotes.map(q => inlineMd(q)).join('<br>')}</blockquote>`;
+        continue;
+      }
+      if (trimmed === '---' || trimmed === '***') { html += '<hr>'; continue; }
+      if (trimmed === '') { continue; }
+      html += `<p>${inlineMd(line)}</p>`;
+    }
+    if (inCode) { flushTable(); html += `<pre><code>${escMd(inCodeLines.join('\n'))}</code></pre>`; }
+    flushTable();
+    return html;
+  }
+
 </script>
 </body>
 </html>

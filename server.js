@@ -10,6 +10,7 @@ const url = require('url');
 
 const PORT = 8238;
 const DB_PY = null; // 不再调用 Python
+const NOTES_DIR = path.join(__dirname, 'notes');
 
 // ── 加载模块 ─────────────────────────────────────────────
 const { initDB, closeDB, saveDB,
@@ -189,6 +190,56 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'DELETE') {
       try { deleteTodo(id); jsonResR({ success: true }); }
       catch (e) { jsonResR({ error: e.message }, 500); }
+      return;
+    }
+    jsonResR({ error: 'Not found' }, 404); return;
+  }
+
+  // ── /api/todos/:id/note ───────────────────────────────
+  const noteMatch = pathname.match(/^\/api\/todos\/([^/]+)\/note$/);
+  if (noteMatch) {
+    const id = noteMatch[1];
+
+    // 根据任务标题生成安全的 .md 文件名（自动建文件）
+    const noteFileFor = (todoId) => {
+      const todo = getTodos().find(t => t.id === todoId);
+      if (!todo) return `${todoId}.md`;
+      const base = (todo.title || 'note')
+        .replace(/[\\/:*?"<>|\s]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60);
+      return (base || `note-${todoId}`) + '.md';
+    };
+
+    if (req.method === 'GET') {
+      try {
+        if (!fs.existsSync(NOTES_DIR)) fs.mkdirSync(NOTES_DIR, { recursive: true });
+        const noteFile = noteFileFor(id);
+        const filepath = path.join(NOTES_DIR, noteFile);
+        // 自动建文件：不存在时以任务标题为一级标题创建
+        if (!fs.existsSync(filepath)) {
+          const todo = getTodos().find(t => t.id === id);
+          const heading = todo ? `# ${todo.title}\n` : '';
+          fs.writeFileSync(filepath, heading, 'utf-8');
+          updateTodo(id, { noteFile });
+        }
+        const exists = fs.existsSync(filepath);
+        const content = exists ? fs.readFileSync(filepath, 'utf-8') : '';
+        jsonResR({ id, noteFile, content, exists });
+      } catch (e) { jsonResR({ error: e.message }, 500); }
+      return;
+    }
+    if (req.method === 'PUT') {
+      withBody(async ({ content }) => {
+        try {
+          if (!fs.existsSync(NOTES_DIR)) fs.mkdirSync(NOTES_DIR, { recursive: true });
+          const filepath = path.join(NOTES_DIR, noteFileFor(id));
+          fs.writeFileSync(filepath, content || '', 'utf-8');
+          updateTodo(id, { noteFile: path.basename(filepath) });
+          jsonResR({ id, noteFile: path.basename(filepath), success: true });
+        } catch (e) { jsonResR({ error: e.message }, 500); }
+      });
       return;
     }
     jsonResR({ error: 'Not found' }, 404); return;
