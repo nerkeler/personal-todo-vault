@@ -813,10 +813,11 @@
     .note-save-status { font-size: 0.75rem; color: var(--text-3); }
     .note-body { flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 280px; scrollbar-width: thin; }
     .note-editor { display: none; width: 100%; resize: none; padding: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9rem; line-height: 1.7; background: var(--bg); color: var(--text); outline: none; border: 1px solid var(--border); border-radius: var(--radius-sm); }
-    .note-modal[data-mode="preview"] .note-preview-wrap { display: block; }
-    .note-modal[data-mode="preview"] .note-editor { display: none; }
-    .note-modal[data-mode="editor"] .note-preview-wrap { display: none; }
-    .note-modal[data-mode="editor"] .note-editor { display: block; }
+    /* data-mode is set on the modal overlay (#noteModal), not the inner panel. */
+    #noteModal[data-mode="preview"] .note-preview-wrap { display: block; }
+    #noteModal[data-mode="preview"] .note-editor { display: none; }
+    #noteModal[data-mode="editor"] .note-preview-wrap { display: none; }
+    #noteModal[data-mode="editor"] .note-editor { display: block; }
     .note-body.note-preview-wrap { padding: 20px 24px; font-size: 0.95rem; line-height: 1.75; color: var(--text); overflow-wrap: break-word; }
 
     /* Markdown preview typography */

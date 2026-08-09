@@ -20,10 +20,13 @@ const { initDB, closeDB, saveDB,
 const { sendEmail, DEFAULT_TO } = require('./email.js');
 
 // ── 环境变量加载（读取 /etc/environment）──────────────────
-fs.readFileSync('/etc/environment', 'utf-8').split('\n').forEach(line => {
-  const m = line.match(/^([^=]+)=(.*)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-});
+// /etc/environment 仅在部分 Linux 环境中存在；本机开发环境缺失时直接跳过。
+if (fs.existsSync('/etc/environment')) {
+  fs.readFileSync('/etc/environment', 'utf-8').split('\n').forEach(line => {
+    const m = line.match(/^([^=]+)=(.*)$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+  });
+}
 
 // ── MIME 类型 ────────────────────────────────────────────
 const MIME = {
