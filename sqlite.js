@@ -7,6 +7,9 @@ const path = require('path');
 const initSqlJs = require('./sql-wasm.js');
 
 const DB_FILE = path.join(__dirname, 'todo.db');
+const JSON_FILE = path.join(__dirname, 'data.json');
+const BACKUP_DIR = path.join(__dirname, 'backups');
+const MAX_BACKUPS = 10;
 let db = null;
 
 const PRESET_CATEGORIES = [
@@ -20,6 +23,7 @@ const PRESET_CATEGORIES = [
 
 // ── 初始化数据库连接 ─────────────────────────────────────
 async function initDB() {
+  const dbExisted = fs.existsSync(DB_FILE);
   const SQL = await initSqlJs({
     locateFile: f => path.join(__dirname, f)
   });
@@ -78,6 +82,13 @@ async function initDB() {
     }
   }
 
+  // 新数据库存在旧版 JSON 时自动迁移，避免首次启动变成空库。
+  if (!dbExisted && fs.existsSync(JSON_FILE)) {
+    const result = migrateFromJSON(JSON_FILE, false);
+    console.log(`[TODO] Migrated JSON: ${result.cats} categories, ${result.todos} todos`);
+  }
+
+  normalizeCategoryOrder();
   saveDB();
   return db;
 }
@@ -87,7 +98,33 @@ function saveDB() {
   if (!db) return;
   const data = db.export();
   const buffer = Buffer.from(data);
-  fs.writeFileSync(DB_FILE, buffer);
+  const tempFile = `${DB_FILE}.${process.pid}.tmp`;
+
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  if (fs.existsSync(DB_FILE)) {
+    const stamp = new Date().toISOString()
+      .replace(/[-:]/g, '')
+      .replace('T', '-')
+      .replace('Z', '');
+    fs.copyFileSync(DB_FILE, path.join(BACKUP_DIR, `todo-${stamp}.db`));
+  }
+
+  const fd = fs.openSync(tempFile, 'w');
+  try {
+    fs.writeSync(fd, buffer, 0, buffer.length, 0);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tempFile, DB_FILE);
+
+  const backups = fs.readdirSync(BACKUP_DIR)
+    .filter(name => /^todo-.*\.db$/.test(name))
+    .sort()
+    .reverse();
+  for (const old of backups.slice(MAX_BACKUPS)) {
+    try { fs.unlinkSync(path.join(BACKUP_DIR, old)); } catch (_) {}
+  }
 }
 
 function closeDB() {
@@ -106,8 +143,15 @@ function rowsToArray(result) {
 }
 
 // ── Categories ─────────────────────────────────────────
+function normalizeCategoryOrder() {
+  const rows = rowsToArray(db.exec('SELECT id FROM categories ORDER BY sort_order ASC, rowid ASC'));
+  rows.forEach((row, idx) => {
+    db.run('UPDATE categories SET sort_order=? WHERE id=?', [idx, row.id]);
+  });
+}
+
 function getCategories() {
-  const result = db.exec('SELECT * FROM categories ORDER BY sort_order');
+  const result = db.exec('SELECT * FROM categories ORDER BY sort_order, rowid');
   return rowsToArray(result);
 }
 
@@ -136,7 +180,12 @@ function deleteCategory(id) {
 }
 
 function reorderCategories(orderIds) {
-  orderIds.forEach((id, idx) => {
+  const existingIds = new Set(rowsToArray(db.exec('SELECT id FROM categories')).map(row => row.id));
+  const ordered = [...new Set(orderIds)].filter(id => existingIds.has(id));
+  const missing = rowsToArray(db.exec('SELECT id FROM categories ORDER BY sort_order, rowid'))
+    .map(row => row.id)
+    .filter(id => !ordered.includes(id));
+  [...ordered, ...missing].forEach((id, idx) => {
     db.run('UPDATE categories SET sort_order=? WHERE id=?', [idx, id]);
   });
   saveDB();
@@ -152,11 +201,15 @@ function getTodos(categoryId) {
     ? db.exec(sql, [categoryId])
     : db.exec(sql);
   return rowsToArray(result).map(r => ({
-    ...r,
+    id: r.id,
+    title: r.title,
     categoryId: r.category_id,
+    progress: Number.isInteger(r.progress) ? r.progress : 0,
     createdAt: r.created_at || null,
     completed: !!r.completed,
-    reminder_enabled: !!r.reminder_enabled,
+    reminderEnabled: !!r.reminder_enabled,
+    reminderTime: r.reminder_time || '',
+    creatorEmail: r.creator_email || '',
     noteFile: r.note_file || null,
   }));
 }
@@ -231,7 +284,7 @@ function saveSettings(emailEnabled, checkTime) {
 }
 
 // ── 从 JSON 迁移 ──────────────────────────────────────
-function migrateFromJSON(jsonFile) {
+function migrateFromJSON(jsonFile, persist = true) {
   if (!fs.existsSync(jsonFile)) return { status: 'already_migrated' };
   const data = JSON.parse(fs.readFileSync(jsonFile, 'utf-8'));
 
@@ -239,24 +292,28 @@ function migrateFromJSON(jsonFile) {
   for (const cat of (data.categories || [])) {
     try {
       db.run('INSERT OR IGNORE INTO categories (id, name, icon, sort_order) VALUES (?, ?, ?, ?)',
-        [cat.id, cat.name, cat.icon, cat.order || 0]);
+        [cat.id, cat.name, cat.icon || '📋', cat.sort_order ?? cat.order ?? 0]);
     } catch (e) { /* ignore dup */ }
   }
 
   // 迁移任务
   for (const todo of (data.todos || [])) {
     try {
+      const reminderEnabled = todo.reminderEnabled ?? todo.reminder_enabled ?? false;
+      const reminderTime = todo.reminderTime ?? todo.reminder_time ?? '';
+      const creatorEmail = todo.creatorEmail ?? todo.creator_email ?? '';
+      const noteFile = todo.noteFile ?? todo.note_file ?? '';
       db.run(`INSERT OR IGNORE INTO todos
         (id, title, completed, category_id, progress, created_at, reminder_enabled, reminder_time, creator_email, note_file)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [todo.id, todo.title, todo.completed ? 1 : 0,
          todo.categoryId || 'cat_default', todo.progress || 0,
-         todo.createdAt || '', todo.reminderEnabled ? 1 : 0,
-         todo.reminderTime || '', todo.creatorEmail || '', todo.noteFile || '']);
+         todo.createdAt || '', reminderEnabled ? 1 : 0,
+         reminderTime, creatorEmail, noteFile]);
     } catch (e) { /* ignore dup */ }
   }
 
-  saveDB();
+  if (persist) saveDB();
   return { status: 'migrated', todos: (data.todos || []).length, cats: (data.categories || []).length };
 }
 

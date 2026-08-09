@@ -1,5 +1,12 @@
 {
   "dependencies": {
     "nodemailer": "^6.9.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

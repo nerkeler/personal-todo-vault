@@ -1311,7 +1311,7 @@
       catCounts[t.categoryId] = (catCounts[t.categoryId] || 0) + 1;
     });
 
-    const sorted = categories.sort((a, b) => a.order - b.order);
+    const sorted = categories.sort((a, b) => a.sort_order - b.sort_order);
 
     let html = `
       <div class="cat-item cat-all${activeCatId === null ? ' active' : ''}" onclick="selectCat(null)">
@@ -1329,7 +1329,7 @@
       const canDown = idx < sorted.length - 1;
       html += `
         <div class="cat-item${activeCatId === cat.id ? ' active' : ''}" onclick="selectCat('${cat.id}')">
-          <span class="cat-icon">${cat.icon}</span>
+          <span class="cat-icon">${escHtml(cat.icon)}</span>
           <span class="cat-name">${escHtml(cat.name)}</span>
           <span class="cat-count">${count}</span>
           <div class="cat-order-btns">
@@ -1352,15 +1352,15 @@
   }
 
   async function reorderCat(catId, direction) {
-    const sorted = [...categories].sort((a, b) => a.order - b.order);
+    const sorted = [...categories].sort((a, b) => a.sort_order - b.sort_order);
     const idx = sorted.findIndex(c => c.id === catId);
     if (idx === -1) return;
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
     // Swap orders
-    const tmpOrder = sorted[idx].order;
-    sorted[idx].order = sorted[swapIdx].order;
-    sorted[swapIdx].order = tmpOrder;
+    const tmpOrder = sorted[idx].sort_order;
+    sorted[idx].sort_order = sorted[swapIdx].sort_order;
+    sorted[swapIdx].sort_order = tmpOrder;
     // Update local state
     categories = sorted;
     renderCats();
@@ -1378,7 +1378,7 @@
     activeCatId = catId;
     const cat = catId ? categories.find(c => c.id === catId) : null;
     document.getElementById('currentCatTitle').innerHTML =
-      cat ? `${cat.icon} ${escHtml(cat.name)}` : '📋 全部';
+      cat ? `${escHtml(cat.icon)} ${escHtml(cat.name)}` : '📋 全部';
     // Sync: also set the add-form category to the selected one
     if (catId) {
       selectedAddCatId = catId;
@@ -1416,11 +1416,11 @@
       return;
     }
     // Build list
-    list.innerHTML = categories.sort((a, b) => a.order - b.order).map(c => `
+    list.innerHTML = categories.sort((a, b) => a.sort_order - b.sort_order).map(c => `
       <div class="cat-picker-item${c.id === selectedAddCatId ? ' selected' : ''}"
            onclick="selectAddCat('${c.id}')">
         <span class="check">${c.id === selectedAddCatId ? '✔' : ''}</span>
-        ${c.icon} ${escHtml(c.name)}
+        ${escHtml(c.icon)} ${escHtml(c.name)}
       </div>
     `).join('');
     // Move to body for Portal behavior (avoids stacking context issues)
@@ -1491,7 +1491,7 @@
   function makeTodoItem(t) {
     const cat = categories.find(c => c.id === t.categoryId);
     const isEditing = editingTodoId === t.id;
-    const catIcon = cat ? cat.icon : '📋';
+    const catIcon = escHtml(cat ? cat.icon : '📋');
     const catName = cat ? cat.name : '默认';
     const dateStr = formatDate(t.createdAt);
     const created = new Date(t.createdAt);
@@ -1588,7 +1588,7 @@
     const t = todos.find(x => x.id === todoId);
     const optsHtml = categories.filter(c => c.id !== t.categoryId).map(c => `
       <div class="move-option" onclick="moveTodo('${todoId}', '${c.id}'); closeMoveDropdown();">
-        ${c.icon} ${escHtml(c.name)}
+        ${escHtml(c.icon)} ${escHtml(c.name)}
       </div>
     `).join('') || '<div style="padding:8px 12px;font-size:0.82rem;color:var(--text-3)">无其他分类</div>';
 
@@ -1838,7 +1838,7 @@
         // Update active cat title if needed
         const activeCat = activeCatId ? categories.find(c => c.id === activeCatId) : null;
         if (activeCat) {
-          document.getElementById('currentCatTitle').innerHTML = `${activeCat.icon} ${escHtml(activeCat.name)}`;
+          document.getElementById('currentCatTitle').innerHTML = `${escHtml(activeCat.icon)} ${escHtml(activeCat.name)}`;
         }
       } else {
         // Create
@@ -1925,11 +1925,15 @@
     try {
       const res = await fetch(`${API}/todos/${todoId}/note`);
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `加载失败（${res.status}）`);
       document.getElementById('noteEditor').value = data.content || '';
       renderNotePreview(data.content || '');
       const t = todos.find(x => x.id === todoId);
       document.getElementById('noteModalTitle').textContent = `📄 ${t ? t.title : '笔记'}`;
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      document.getElementById('noteSaveStatus').textContent = '❌ 加载失败';
+    }
   }
 
   function setNoteMode(mode) {
@@ -1960,6 +1964,7 @@
         body: JSON.stringify({ content })
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `保存失败（${res.status}）`);
       renderNotePreview(content);
       const st = document.getElementById('noteSaveStatus');
       st.textContent = '✅ 已保存';
@@ -1975,14 +1980,37 @@
 
   /* ── Markdown renderer ── */
   function escMd(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+  function safeMdUrl(value) {
+    const decoder = document.createElement('textarea');
+    decoder.innerHTML = String(value || '');
+    const decoded = decoder.value.trim();
+    try {
+      const parsed = new URL(decoded, document.baseURI);
+      if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) return null;
+      return escMd(decoded);
+    } catch (_) {
+      return null;
+    }
   }
   function inlineMd(s) {
-    return s
+    let html = escMd(s);
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, href) => {
+      const safeHref = safeMdUrl(href);
+      return safeHref
+        ? `<a href="${safeHref}" target="_blank" rel="noopener">${label}</a>`
+        : label;
+    });
+    return html
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
       .replace(/~~([^~]+)~~/g, '<del>$1</del>');
   }
   function renderMarkdown(md) {
