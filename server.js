@@ -8,7 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
-const PORT = 8238;
+const PORT = Number(process.env.PORT) || 8238;
+const HOST = process.env.HOST || '127.0.0.1';
 const DB_PY = null; // 不再调用 Python
 const NOTES_DIR = path.join(__dirname, 'notes');
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024;
@@ -441,7 +442,7 @@ async function bootstrap() {
 }
 
 bootstrap();
-server.listen(PORT, '0.0.0.0', () => console.log(`TODO App → http://localhost:${PORT}`));
+server.listen(PORT, HOST, () => console.log(`TODO App → http://${HOST}:${PORT}`));
 
 process.on('SIGTERM', () => { closeDB(); process.exit(0); });
 process.on('SIGINT',  () => { closeDB(); process.exit(0); });
