@@ -646,16 +646,17 @@
 
     /* Progress */
     .progress-card {
-      margin-top: 32px;
+      margin: 0 0 18px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 14px 16px;
       box-shadow: var(--shadow);
     }
-    .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .progress-label { font-size: 0.82rem; color: var(--text-2); font-weight: 500; }
-    .progress-pct { font-size: 0.82rem; color: var(--accent); font-weight: 700; }
+    .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .progress-label { font-size: 0.86rem; color: var(--text-2); font-weight: 600; }
+    .progress-pct { font-size: 0.9rem; color: var(--accent); font-weight: 700; }
+    .progress-subtext { font-size: 0.76rem; color: var(--text-3); margin-bottom: 9px; }
     .progress-track { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
     .progress-fill {
       height: 100%;
@@ -739,6 +740,93 @@
       width: 100%;
     }
     .modal-input:focus { border-color: var(--primary); }
+
+
+    .settings-modal {
+      max-width: 760px;
+      max-height: 88vh;
+      overflow-y: auto;
+    }
+    .settings-hint {
+      margin: -6px 0 16px;
+      color: var(--text-3);
+      font-size: 0.78rem;
+      line-height: 1.6;
+    }
+    .settings-section {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 14px;
+      background: var(--bg);
+    }
+    .settings-section-head,
+    .settings-switch-row,
+    .settings-actions-inline,
+    .settings-footer-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .settings-section-head { margin-bottom: 14px; }
+    .settings-section-title { font-weight: 700; color: var(--text); font-size: 0.95rem; }
+    .settings-section-desc { font-size: 0.75rem; color: var(--text-3); line-height: 1.5; margin-top: 2px; }
+    .settings-switch-row {
+      padding: 10px 0 12px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .settings-field { display: flex; flex-direction: column; gap: 6px; }
+    .settings-field-wide { grid-column: 1 / -1; }
+    .settings-field span,
+    .settings-check-field span { font-size: 0.78rem; color: var(--text-2); font-weight: 500; }
+    .settings-check-field {
+      min-height: 40px;
+      padding: 0 12px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      align-self: end;
+    }
+    .settings-check-field input { width: 16px; height: 16px; accent-color: var(--primary); }
+    .settings-badge {
+      font-size: 0.75rem;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-weight: 700;
+      white-space: nowrap;
+      background: rgba(255,85,85,0.12);
+      color: #ff5555;
+    }
+    .settings-meta,
+    .settings-result {
+      font-size: 0.75rem;
+      color: var(--text-3);
+      line-height: 1.5;
+    }
+    .settings-meta { margin-top: 10px; }
+    .settings-actions-inline { justify-content: flex-start; margin-top: 12px; flex-wrap: wrap; }
+    .settings-footer-actions { justify-content: flex-end; margin-top: 16px; }
+    .settings-save-result { text-align: right; margin-top: 8px; min-height: 18px; }
+    .modal-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    @media (max-width: 720px) {
+      .settings-grid { grid-template-columns: 1fr; }
+      .settings-modal { max-width: 96vw; }
+      .settings-section-head,
+      .settings-switch-row,
+      .settings-footer-actions { align-items: flex-start; }
+      .settings-footer-actions { flex-direction: column-reverse; }
+      .settings-footer-actions .modal-btn { width: 100%; }
+    }
 
     /* Icon grid */
     .icon-grid {
@@ -893,7 +981,7 @@
       </div>
       <div class="header-right">
         <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切换主题">🌙</button>
-        <button class="theme-toggle" id="settingsBtn" onclick="openSettingsModal()" title="邮件提醒设置">⚙️</button>
+        <button class="theme-toggle" id="settingsBtn" onclick="openSettingsModal()" title="配置中心">⚙️</button>
       </div>
     </div>
 
@@ -917,9 +1005,10 @@
     <!-- Progress -->
     <div class="progress-card" id="progressCard" style="display:none">
       <div class="progress-header">
-        <span class="progress-label">完成进度</span>
+        <span class="progress-label" id="progressLabel">待完成进度</span>
         <span class="progress-pct" id="progressPct">0%</span>
       </div>
+      <div class="progress-subtext" id="progressSubtext">剩余 0 项 · 已完成 0 项</div>
       <div class="progress-track">
         <div class="progress-fill" id="progressFill"></div>
       </div>
@@ -977,40 +1066,124 @@
   </div>
 </div>
 
-<!-- 进度编辑弹窗 -->
+<!-- 配置中心弹窗 -->
 <div class="modal-overlay" id="settingsModal">
-  <div class="modal">
+  <div class="modal settings-modal">
     <div class="modal-title">
-      <span>⚙️ 邮件提醒设置</span>
+      <span>⚙️ 配置中心</span>
       <button class="modal-close" onclick="closeSettingsModal()">✕</button>
     </div>
-    <div class="modal-row">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+    <div class="settings-hint">邮件提醒和坚果云备份统一在这里配置；密码默认不显示明文，留空表示沿用已保存密码。</div>
+
+    <section class="settings-section">
+      <div class="settings-section-head">
+        <div>
+          <div class="settings-section-title">📧 邮件提醒</div>
+          <div class="settings-section-desc">用于每日提醒和任务创建者邮件通知。</div>
+        </div>
+        <span class="settings-badge" id="smtpStatusBadge">读取中…</span>
+      </div>
+      <div class="settings-switch-row">
         <div>
           <div class="modal-label">启用邮件提醒</div>
-          <div style="font-size:0.75rem;color:var(--text-3);margin-top:2px">开启后将在每日设定时间检查并发送提醒邮件</div>
+          <div class="settings-section-desc">开启后按每日检查时间扫描待提醒任务。</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="emailEnabledToggle" onchange="saveSettings()">
+          <input type="checkbox" id="emailEnabledToggle">
           <span class="slider"></span>
         </label>
       </div>
-    </div>
-    <div class="modal-row">
-      <label class="modal-label">每日检查时间</label>
-      <input class="modal-input" type="time" id="checkTimeInput" value="09:00" onchange="saveSettings()" style="height:40px;padding:0 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--bg);color:var(--text);">
-    </div>
-    <div class="modal-row">
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
-        <div style="font-size:0.82rem;font-weight:500;color:var(--text-2)">SMTP状态</div>
-        <span id="smtpStatusBadge" style="font-size:0.75rem;padding:2px 8px;border-radius:10px;font-weight:600"></span>
+      <div class="settings-grid">
+        <label class="settings-field">
+          <span>每日检查时间</span>
+          <input class="modal-input" type="time" id="checkTimeInput" value="09:00">
+        </label>
+        <label class="settings-field">
+          <span>SMTP 服务器</span>
+          <input class="modal-input" type="text" id="emailHostInput" placeholder="smtp.163.com" autocomplete="off">
+        </label>
+        <label class="settings-field">
+          <span>SMTP 端口</span>
+          <input class="modal-input" type="number" id="emailPortInput" min="1" max="65535" placeholder="465">
+        </label>
+        <label class="settings-check-field">
+          <input type="checkbox" id="emailSecureToggle">
+          <span>使用 SSL/TLS</span>
+        </label>
+        <label class="settings-field">
+          <span>SMTP 账号</span>
+          <input class="modal-input" type="text" id="emailUserInput" placeholder="邮箱账号" autocomplete="username">
+        </label>
+        <label class="settings-field">
+          <span>SMTP 密码 / 授权码</span>
+          <input class="modal-input" type="password" id="emailPasswordInput" autocomplete="new-password">
+        </label>
+        <label class="settings-field">
+          <span>发件人名称</span>
+          <input class="modal-input" type="text" id="emailFromNameInput" placeholder="TODO提醒">
+        </label>
+        <label class="settings-field">
+          <span>发件人邮箱</span>
+          <input class="modal-input" type="email" id="emailFromInput" placeholder="默认使用 SMTP 账号">
+        </label>
+        <label class="settings-field settings-field-wide">
+          <span>收件人</span>
+          <input class="modal-input" type="text" id="emailRecipientsInput" placeholder="可填写一个或多个邮箱，多个用逗号分隔">
+        </label>
       </div>
+      <div class="settings-actions-inline">
+        <button class="modal-btn primary" id="testEmailBtn" onclick="testEmailSettings()">测试邮件</button>
+        <span class="settings-result" id="emailTestResult"></span>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="settings-section-head">
+        <div>
+          <div class="settings-section-title">☁️ 坚果云备份</div>
+          <div class="settings-section-desc">通过坚果云 WebDAV 增量同步数据库和 Markdown 笔记；每次保留一份完整快照清单。</div>
+        </div>
+        <span class="settings-badge" id="backupStatusBadge">读取中…</span>
+      </div>
+      <div class="settings-grid">
+        <label class="settings-field settings-field-wide">
+          <span>WebDAV 地址</span>
+          <input class="modal-input" type="url" id="webdavBaseUrlInput" placeholder="https://dav.jianguoyun.com/dav/">
+        </label>
+        <label class="settings-field">
+          <span>坚果云账号</span>
+          <input class="modal-input" type="text" id="webdavUsernameInput" placeholder="坚果云邮箱/账号" autocomplete="username">
+        </label>
+        <label class="settings-field">
+          <span>应用密码</span>
+          <input class="modal-input" type="password" id="webdavPasswordInput" autocomplete="new-password">
+        </label>
+        <label class="settings-field">
+          <span>备份目录</span>
+          <input class="modal-input" type="text" id="webdavBackupDirInput" placeholder="todo-app-backups">
+        </label>
+        <label class="settings-field">
+          <span>自动备份间隔（小时）</span>
+          <input class="modal-input" type="number" id="webdavIntervalInput" min="1" step="1" placeholder="24">
+        </label>
+        <label class="settings-check-field">
+          <input type="checkbox" id="webdavAutoEnabledToggle">
+          <span>启用自动备份</span>
+        </label>
+      </div>
+      <div id="backupMeta" class="settings-meta">读取中…</div>
+      <div class="settings-actions-inline">
+        <button class="modal-btn primary" id="testWebdavBtn" onclick="testWebdavSettings()">测试坚果云</button>
+        <button class="modal-btn" id="backupNowBtn" onclick="runCloudBackup()">立即备份</button>
+        <span class="settings-result" id="backupResult"></span>
+      </div>
+    </section>
+
+    <div class="settings-footer-actions">
+      <button class="modal-btn cancel" onclick="closeSettingsModal()">关闭</button>
+      <button class="modal-btn primary" id="saveSettingsBtn" onclick="saveSettings()">保存配置</button>
     </div>
-    <div style="font-size:0.75rem;color:var(--text-3);margin-top:8px;line-height:1.6">
-      SMTP账号密码从系统环境变量读取（安全）<br>
-      任务提醒邮件将发送到任务创建者邮箱或默认收件人
-    </div>
-    <button class="modal-btn primary" style="margin-top:16px;width:100%;height:40px;border:none;border-radius:var(--radius-sm);font-size:0.9rem;cursor:pointer" onclick="closeSettingsModal()">关闭</button>
+    <div class="settings-result settings-save-result" id="settingsSaveResult"></div>
   </div>
 </div>
 
@@ -1035,7 +1208,7 @@
     </div>
     <div class="modal-row">
       <label class="modal-label">接收邮箱</label>
-      <input class="modal-input" type="email" id="creatorEmailInput" placeholder="不填则使用默认收件人" style="height:40px;padding:0 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--bg);color:var(--text);">
+      <input class="modal-input" type="email" id="creatorEmailInput" placeholder="可选：单独指定该任务收件人；不填使用配置中心收件人" style="height:40px;padding:0 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--bg);color:var(--text);">
     </div>
     <div style="display:flex;gap:8px;margin-top:16px">
       <button class="modal-btn cancel" style="flex:1;height:38px;border:none;border-radius:var(--radius-sm);font-size:0.85rem;cursor:pointer" onclick="closeReminderModal()">取消</button>
@@ -1103,7 +1276,12 @@
   let editingTodoId = null;
   let editingProgressTodoId = null;
   let editingReminderTodoId = null;
-  let settings = { emailEnabled: false, checkTime: '09:00', smtpReady: false };
+  let settings = {
+    email: { enabled: false, checkTime: '09:00', host: 'smtp.163.com', port: 465, secure: true, user: '', passwordConfigured: false, fromName: 'TODO提醒', from: '', recipients: '', configured: false },
+    webdav: { provider: 'jianguoyun', baseUrl: 'https://dav.jianguoyun.com/dav/', username: '', passwordConfigured: false, backupDir: 'todo-app-backups', autoEnabled: false, intervalHours: 24, configured: false },
+    emailEnabled: false, checkTime: '09:00', smtpReady: false, backup: null
+  };
+  let backupStatus = { configured: false, backupDir: 'todo-app-backups', provider: 'jianguoyun', lastBackup: null };
   let selectedIcon = '📋';
   let selectedAddCatId = localStorage.getItem('lastUsedCatId') || 'cat_default';
   let defaultCatId = null; // resolved after categories load
@@ -1203,36 +1381,293 @@
   }
 
   /* ── Settings Modal ── */
-  function openSettingsModal() {
-    document.getElementById('emailEnabledToggle').checked = settings.emailEnabled;
-    document.getElementById('checkTimeInput').value = settings.checkTime || '09:00';
-    const badge = document.getElementById('smtpStatusBadge');
-    if (settings.smtpReady) {
-      badge.textContent = '✅ 已配置';
-      badge.style.background = 'rgba(82,196,26,0.12)';
-      badge.style.color = '#52c41a';
-    } else {
-      badge.textContent = '❌ 未配置';
-      badge.style.background = 'rgba(255,85,85,0.12)';
-      badge.style.color = '#ff5555';
-    }
-    document.getElementById('settingsModal').classList.add('show');
+  function defaultSettings() {
+    return {
+      email: {
+        enabled: false,
+        checkTime: '09:00',
+        host: 'smtp.163.com',
+        port: 465,
+        secure: true,
+        user: '',
+        passwordConfigured: false,
+        fromName: 'TODO提醒',
+        from: '',
+        recipients: '',
+        configured: false,
+      },
+      webdav: {
+        provider: 'jianguoyun',
+        baseUrl: 'https://dav.jianguoyun.com/dav/',
+        username: '',
+        passwordConfigured: false,
+        backupDir: 'todo-app-backups',
+        autoEnabled: false,
+        intervalHours: 24,
+        configured: false,
+      },
+      emailEnabled: false,
+      checkTime: '09:00',
+      smtpReady: false,
+      backup: null,
+    };
   }
+
+  function normalizeSettings(raw = {}) {
+    const base = defaultSettings();
+    const email = { ...base.email, ...(raw.email || {}) };
+    email.enabled = raw.emailEnabled !== undefined ? !!raw.emailEnabled : !!email.enabled;
+    email.checkTime = raw.checkTime || email.checkTime || '09:00';
+    email.configured = raw.smtpReady !== undefined ? !!raw.smtpReady : !!email.configured;
+    const webdav = { ...base.webdav, ...(raw.webdav || {}), ...(raw.backup || {}) };
+    return {
+      ...base,
+      ...raw,
+      email,
+      webdav,
+      emailEnabled: email.enabled,
+      checkTime: email.checkTime,
+      smtpReady: email.configured,
+    };
+  }
+
+  function setBadge(id, ok, yesText = '✅ 已配置', noText = '❌ 未配置') {
+    const badge = document.getElementById(id);
+    if (!badge) return;
+    badge.textContent = ok ? yesText : noText;
+    badge.style.background = ok ? 'rgba(82,196,26,0.12)' : 'rgba(255,85,85,0.12)';
+    badge.style.color = ok ? '#52c41a' : '#ff5555';
+  }
+
+  function setResult(id, text, kind = 'muted') {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text || '';
+    el.style.color = kind === 'ok' ? '#52c41a' : kind === 'error' ? 'var(--danger)' : 'var(--text-3)';
+  }
+
+  function setButtonBusy(id, busy, text) {
+    const btn = document.getElementById(id);
+    if (!btn) return null;
+    if (!btn.dataset.defaultText) btn.dataset.defaultText = btn.textContent;
+    btn.disabled = !!busy;
+    btn.textContent = busy ? text : btn.dataset.defaultText;
+    return btn;
+  }
+
+  async function refreshSettings() {
+    const res = await fetch(API + '/settings?_=' + Date.now());
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '读取配置失败');
+    settings = normalizeSettings(data);
+    backupStatus = settings.backup || settings.webdav || backupStatus;
+    populateSettingsForm();
+    renderBackupStatus();
+    return settings;
+  }
+
+  function populateSettingsForm() {
+    settings = normalizeSettings(settings);
+    const email = settings.email;
+    const webdav = settings.webdav;
+    const setVal = (id, value = '') => { const el = document.getElementById(id); if (el) el.value = value ?? ''; };
+    const setChecked = (id, value) => { const el = document.getElementById(id); if (el) el.checked = !!value; };
+
+    setChecked('emailEnabledToggle', email.enabled);
+    setVal('checkTimeInput', email.checkTime || '09:00');
+    setVal('emailHostInput', email.host || 'smtp.163.com');
+    setVal('emailPortInput', email.port || 465);
+    setChecked('emailSecureToggle', email.secure !== false);
+    setVal('emailUserInput', email.user || '');
+    setVal('emailFromNameInput', email.fromName || 'TODO提醒');
+    setVal('emailFromInput', email.from || '');
+    setVal('emailRecipientsInput', email.recipients || '');
+    setVal('emailPasswordInput', '');
+    const emailPasswordInput = document.getElementById('emailPasswordInput');
+    if (emailPasswordInput) emailPasswordInput.placeholder = email.passwordConfigured ? '已配置，留空不修改' : 'SMTP 密码 / 授权码';
+    setBadge('smtpStatusBadge', !!email.configured);
+
+    setVal('webdavBaseUrlInput', webdav.baseUrl || 'https://dav.jianguoyun.com/dav/');
+    setVal('webdavUsernameInput', webdav.username || '');
+    setVal('webdavBackupDirInput', webdav.backupDir || 'todo-app-backups');
+    setVal('webdavIntervalInput', webdav.intervalHours || 24);
+    setChecked('webdavAutoEnabledToggle', webdav.autoEnabled);
+    setVal('webdavPasswordInput', '');
+    const webdavPasswordInput = document.getElementById('webdavPasswordInput');
+    if (webdavPasswordInput) webdavPasswordInput.placeholder = webdav.passwordConfigured ? '已配置，留空不修改' : '坚果云应用密码';
+    setBadge('backupStatusBadge', !!webdav.configured);
+    renderBackupStatus();
+  }
+
+  function settingsPayloadFromForm() {
+    const value = id => (document.getElementById(id)?.value || '').trim();
+    const checked = id => !!document.getElementById(id)?.checked;
+    const payload = {
+      email: {
+        enabled: checked('emailEnabledToggle'),
+        checkTime: value('checkTimeInput') || '09:00',
+        host: value('emailHostInput'),
+        port: Number(value('emailPortInput')) || 465,
+        secure: checked('emailSecureToggle'),
+        user: value('emailUserInput'),
+        fromName: value('emailFromNameInput') || 'TODO提醒',
+        from: value('emailFromInput'),
+        recipients: value('emailRecipientsInput'),
+      },
+      webdav: {
+        baseUrl: value('webdavBaseUrlInput') || 'https://dav.jianguoyun.com/dav/',
+        username: value('webdavUsernameInput'),
+        backupDir: value('webdavBackupDirInput') || 'todo-app-backups',
+        autoEnabled: checked('webdavAutoEnabledToggle'),
+        intervalHours: Number(value('webdavIntervalInput')) || 24,
+      },
+    };
+    const emailPassword = document.getElementById('emailPasswordInput')?.value || '';
+    const webdavPassword = document.getElementById('webdavPasswordInput')?.value || '';
+    if (emailPassword) payload.email.password = emailPassword;
+    if (webdavPassword) payload.webdav.password = webdavPassword;
+    return payload;
+  }
+
+  async function openSettingsModal() {
+    document.getElementById('settingsModal').classList.add('show');
+    populateSettingsForm();
+    setResult('settingsSaveResult', '正在读取配置…');
+    try {
+      await refreshSettings();
+      setResult('settingsSaveResult', '');
+    } catch (e) {
+      setResult('settingsSaveResult', e.message, 'error');
+    }
+  }
+
   function closeSettingsModal() {
     document.getElementById('settingsModal').classList.remove('show');
   }
+
   async function saveSettings() {
-    const emailEnabled = document.getElementById('emailEnabledToggle').checked;
-    const checkTime = document.getElementById('checkTimeInput').value;
+    setButtonBusy('saveSettingsBtn', true, '保存中…');
+    setResult('settingsSaveResult', '正在保存配置…');
     try {
       const res = await fetch(API + '/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailEnabled, checkTime })
+        body: JSON.stringify(settingsPayloadFromForm()),
       });
       const updated = await res.json();
-      settings = updated;
-    } catch (e) { console.error(e); }
+      if (!res.ok) throw new Error(updated.error || '保存配置失败');
+      settings = normalizeSettings(updated);
+      backupStatus = settings.backup || settings.webdav || backupStatus;
+      populateSettingsForm();
+      setResult('settingsSaveResult', '✅ 配置已保存，服务端已按新配置生效。', 'ok');
+    } catch (e) {
+      setResult('settingsSaveResult', `❌ ${e.message}`, 'error');
+    } finally {
+      setButtonBusy('saveSettingsBtn', false);
+    }
+  }
+
+  async function testEmailSettings() {
+    setButtonBusy('testEmailBtn', true, '测试中…');
+    setResult('emailTestResult', '正在发送测试邮件…');
+    try {
+      const payload = settingsPayloadFromForm();
+      const res = await fetch(API + '/settings/test-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '邮件测试失败');
+      setResult('emailTestResult', `✅ 测试邮件已发送至 ${data.to || payload.email.recipients}`, 'ok');
+    } catch (e) {
+      setResult('emailTestResult', `❌ ${e.message}`, 'error');
+    } finally {
+      setButtonBusy('testEmailBtn', false);
+    }
+  }
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes)) return '-';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  function renderBackupStatus() {
+    const settingsWebdav = normalizeSettings(settings).webdav;
+    const status = { ...settingsWebdav, ...(backupStatus || {}) };
+    const configured = !!status.configured;
+    setBadge('backupStatusBadge', configured);
+
+    const meta = document.getElementById('backupMeta');
+    const btn = document.getElementById('backupNowBtn');
+    if (btn) btn.disabled = !configured;
+    if (meta) {
+      meta.textContent = `目录：${status.backupDir || 'todo-app-backups'} · 增量上传 / 完整快照 · ${status.autoEnabled ? `自动备份：每 ${status.intervalHours || 24} 小时` : '自动备份：未启用'}`;
+    }
+
+    const lastBackup = status.lastBackup || backupStatus?.lastBackup;
+    if (lastBackup?.success) {
+      setResult('backupResult', `最近同步：${new Date(lastBackup.createdAt).toLocaleString()} · 上传对象 ${lastBackup.uploadedObjects ?? '-'} 个，复用 ${lastBackup.reusedObjects ?? '-'} 个 · ${lastBackup.noteCount ?? 0} 个笔记 · ${formatBytes(lastBackup.bytes)}`);
+    } else if (lastBackup?.error) {
+      setResult('backupResult', `最近备份失败：${lastBackup.error}`, 'error');
+    } else {
+      setResult('backupResult', configured ? '配置完整，可测试连接或立即备份。' : '请填写坚果云账号和应用密码。');
+    }
+  }
+
+  async function refreshBackupStatus() {
+    try {
+      const res = await fetch(API + '/backup/status?_=' + Date.now());
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '读取备份状态失败');
+      backupStatus = data;
+      settings = normalizeSettings({ ...settings, webdav: { ...normalizeSettings(settings).webdav, ...data } });
+      renderBackupStatus();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function testWebdavSettings() {
+    setButtonBusy('testWebdavBtn', true, '测试中…');
+    setResult('backupResult', '正在连接坚果云 WebDAV…');
+    try {
+      const res = await fetch(API + '/backup/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settingsPayloadFromForm()),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '坚果云测试失败');
+      setResult('backupResult', `✅ 坚果云连接成功：${data.backupDir || 'todo-app-backups'}（${data.durationMs}ms）`, 'ok');
+    } catch (e) {
+      setResult('backupResult', `❌ ${e.message}`, 'error');
+    } finally {
+      setButtonBusy('testWebdavBtn', false);
+    }
+  }
+
+  async function runCloudBackup() {
+    const status = backupStatus || {};
+    if (!status.configured) { renderBackupStatus(); return; }
+    setButtonBusy('backupNowBtn', true, '备份中…');
+    setResult('backupResult', '正在同步数据库和 Markdown 变更…');
+    try {
+      const res = await fetch(API + '/backup/run', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '备份失败');
+      backupStatus = { ...backupStatus, configured: true, lastBackup: data };
+      settings = normalizeSettings({ ...settings, backup: backupStatus });
+      setResult('backupResult', `✅ 同步完成：上传对象 ${data.uploadedObjects} 个，复用 ${data.reusedObjects} 个 · ${data.noteCount} 个笔记 · ${formatBytes(data.bytes)}`, 'ok');
+    } catch (e) {
+      backupStatus = { ...backupStatus, lastBackup: { success: false, error: e.message, createdAt: new Date().toISOString() } };
+      setResult('backupResult', `❌ ${e.message}`, 'error');
+    } finally {
+      setButtonBusy('backupNowBtn', false);
+      renderBackupStatus();
+    }
   }
 
   /* ── Reminder Modal ── */
@@ -1277,15 +1712,18 @@
   async function loadData() {
     try {
       const ts = Date.now();
-      const [catsRes, todosRes, settingsRes] = await Promise.all([
+      const [catsRes, todosRes, settingsRes, backupRes] = await Promise.all([
         fetch(API + '/categories?_=' + ts),
         fetch(API + '/todos?_=' + ts),
-        fetch(API + '/settings?_=' + ts)
+        fetch(API + '/settings?_=' + ts),
+        fetch(API + '/backup/status?_=' + ts)
       ]);
       const newCats = await catsRes.json();
       const newTodos = await todosRes.json();
       const newSettings = await settingsRes.json();
+      const newBackupStatus = await backupRes.json();
       settings = newSettings;
+      backupStatus = newBackupStatus;
       categories.splice(0, categories.length, ...newCats);
       todos.splice(0, todos.length, ...newTodos);
       // Resolve default category id
@@ -1472,11 +1910,17 @@
     document.getElementById('doneCount').textContent = done;
     document.getElementById('totalCount').textContent = total;
 
-    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     const progCard = document.getElementById('progressCard');
     if (total > 0) {
+      const pct = pending.length > 0
+        ? Math.round(pending.reduce((sum, t) => sum + Math.max(0, Math.min(100, Number(t.progress) || 0)), 0) / pending.length)
+        : 100;
       progCard.style.display = 'block';
+      document.getElementById('progressLabel').textContent = pending.length > 0 ? '待完成进度' : '全部完成';
       document.getElementById('progressPct').textContent = pct + '%';
+      document.getElementById('progressSubtext').textContent = pending.length > 0
+        ? `剩余 ${pending.length} 项 · 已完成 ${done} 项`
+        : `当前分类已全部完成 · 共 ${done} 项`;
       document.getElementById('progressFill').style.width = pct + '%';
     } else {
       progCard.style.display = 'none';

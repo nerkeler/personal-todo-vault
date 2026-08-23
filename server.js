@@ -14,6 +14,8 @@ const DB_PY = null; // 不再调用 Python
 const NOTES_DIR = path.join(__dirname, 'notes');
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_NOTE_BODY_BYTES = 4 * 1024 * 1024;
+const DB_FILE = path.join(__dirname, 'todo.db');
+const BACKUP_PATHS = { rootDir: __dirname, dbFile: DB_FILE, notesDir: NOTES_DIR };
 
 // ── 环境变量加载（读取 /etc/environment）──────────────────
 // /etc/environment 仅在部分 Linux 环境中存在；本机开发环境缺失时直接跳过。
@@ -29,7 +31,9 @@ const { initDB, closeDB, saveDB,
   getCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
   getTodos, createTodo, updateTodo, deleteTodo,
   getSettings, saveSettings, migrateFromJSON } = require('./sqlite.js');
-const { sendEmail, DEFAULT_TO } = require('./email.js');
+const { sendEmail, sendTestEmail } = require('./email.js');
+const { getFullConfig, saveAppConfig, publicAppConfig, isEmailConfigured, migrateStoredConfigSecrets } = require('./appConfig.js');
+const { getBackupConfig, publicBackupStatus, testBackupConfig, uploadBackup } = require('./cloudBackup.js');
 
 // ── MIME 类型 ────────────────────────────────────────────
 const MIME = {
@@ -135,10 +139,59 @@ function isNonEmptyString(value, maxLength = 200) {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength;
 }
 
+function cleanString(value, maxLength = 500) {
+  if (value === undefined || value === null) return undefined;
+  return String(value).trim().slice(0, maxLength);
+}
+
+function settingsResponse(config = getFullConfig()) {
+  return {
+    ...publicAppConfig(config),
+    backup: { ...publicBackupStatus(getBackupConfig(config)), lastBackup },
+  };
+}
+
+function cleanSettingsPatch(payload = {}) {
+  const patch = { email: {}, webdav: {} };
+  const email = payload.email || {};
+  const webdav = payload.webdav || {};
+
+  if (payload.emailEnabled !== undefined) patch.email.enabled = !!payload.emailEnabled;
+  if (payload.checkTime !== undefined) patch.email.checkTime = cleanString(payload.checkTime, 20);
+  if (email.enabled !== undefined) patch.email.enabled = !!email.enabled;
+  if (email.checkTime !== undefined) patch.email.checkTime = cleanString(email.checkTime, 20);
+  if (email.host !== undefined) patch.email.host = cleanString(email.host, 200);
+  if (email.port !== undefined) patch.email.port = Number(email.port) || 465;
+  if (email.secure !== undefined) patch.email.secure = !!email.secure;
+  if (email.user !== undefined) patch.email.user = cleanString(email.user, 300);
+  if (typeof email.password === 'string' && email.password.length > 0) patch.email.password = email.password;
+  if (email.clearPassword === true) patch.email.password = '';
+  if (email.fromName !== undefined) patch.email.fromName = cleanString(email.fromName, 100);
+  if (email.from !== undefined) patch.email.from = cleanString(email.from, 300);
+  if (email.recipients !== undefined) patch.email.recipients = cleanString(email.recipients, 1000);
+  if (email.defaultTo !== undefined) patch.email.recipients = cleanString(email.defaultTo, 1000);
+
+  if (webdav.baseUrl !== undefined) patch.webdav.baseUrl = cleanString(webdav.baseUrl, 500);
+  if (webdav.username !== undefined) patch.webdav.username = cleanString(webdav.username, 300);
+  if (typeof webdav.password === 'string' && webdav.password.length > 0) patch.webdav.password = webdav.password;
+  if (webdav.clearPassword === true) patch.webdav.password = '';
+  if (webdav.backupDir !== undefined) patch.webdav.backupDir = cleanString(webdav.backupDir, 200);
+  if (webdav.autoEnabled !== undefined) patch.webdav.autoEnabled = !!webdav.autoEnabled;
+  if (webdav.intervalHours !== undefined) patch.webdav.intervalHours = Math.max(1, Number(webdav.intervalHours) || 24);
+
+  if (patch.email.checkTime !== undefined && !isValidTime(patch.email.checkTime)) {
+    throw new Error('每日检查时间必须是 HH:MM 格式');
+  }
+  if (patch.email.port !== undefined && (patch.email.port < 1 || patch.email.port > 65535)) {
+    throw new Error('SMTP 端口必须在 1-65535 之间');
+  }
+  return patch;
+}
+
 // ── HTTP 服务器 ──────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
@@ -175,28 +228,67 @@ const server = http.createServer(async (req, res) => {
   // ── GET /api/settings ─────────────────────────────────
   if (pathname === '/api/settings' && req.method === 'GET') {
     try {
-      const s = getSettings();
-      jsonResR({ ...s, smtpReady: !!(process.env.TODO_SMTP_USER && process.env.TODO_SMTP_PASS) });
+      jsonResR(settingsResponse(getFullConfig()));
     } catch (e) { jsonResR({ error: e.message }, 500); }
     return;
   }
 
   // ── PUT /api/settings ──────────────────────────────────
   if (pathname === '/api/settings' && req.method === 'PUT') {
-    withBody(async ({ emailEnabled, checkTime }) => {
-      if (emailEnabled !== undefined && typeof emailEnabled !== 'boolean') {
-        jsonResR({ error: 'emailEnabled 必须是布尔值' }, 400); return;
-      }
-      const nextCheckTime = checkTime ?? '09:00';
-      if (!isValidTime(nextCheckTime)) {
-        jsonResR({ error: 'checkTime 必须是 HH:MM 格式' }, 400); return;
-      }
+    withBody(async (payload) => {
       try {
-        const s = saveSettings(emailEnabled === true, nextCheckTime);
-        if (s.emailEnabled) startCron(); else stopCron();
-        jsonResR({ ...s, smtpReady: !!(process.env.TODO_SMTP_USER && process.env.TODO_SMTP_PASS) });
+        const config = saveAppConfig(cleanSettingsPatch(payload));
+        saveSettings(config.email.enabled, config.email.checkTime); // keep legacy DB settings in sync
+        if (config.email.enabled && isEmailConfigured(config.email)) startCron(); else stopCron();
+        startBackupTimer();
+        jsonResR(settingsResponse(config));
+      } catch (e) { jsonResR({ error: e.message }, 400); }
+    });
+    return;
+  }
+
+  // ── POST /api/settings/test-email ──────────────────────
+  if (pathname === '/api/settings/test-email' && req.method === 'POST') {
+    withBody(async (payload) => {
+      try {
+        const config = getFullConfig(cleanSettingsPatch(payload));
+        const to = cleanString(payload.to, 1000) || config.email.recipients;
+        const result = await sendTestEmail(to, { email: config.email });
+        jsonResR({ ...result, to });
       } catch (e) { jsonResR({ error: e.message }, 500); }
     });
+    return;
+  }
+
+  // ── Cloud backup ──────────────────────────────────────
+  if (pathname === '/api/backup/status' && req.method === 'GET') {
+    try {
+      jsonResR({ ...publicBackupStatus(getBackupConfig()), lastBackup });
+    } catch (e) { jsonResR({ error: e.message }, 500); }
+    return;
+  }
+
+  if (pathname === '/api/backup/test' && req.method === 'POST') {
+    withBody(async (payload) => {
+      try {
+        const config = getFullConfig(cleanSettingsPatch(payload));
+        const result = await testBackupConfig(getBackupConfig(config));
+        jsonResR(result);
+      } catch (e) { jsonResR({ error: e.message }, 500); }
+    });
+    return;
+  }
+
+  if (pathname === '/api/backup/run' && req.method === 'POST') {
+    try {
+      saveDB();
+      const result = await uploadBackup(BACKUP_PATHS, getBackupConfig());
+      lastBackup = result;
+      jsonResR(result);
+    } catch (e) {
+      lastBackup = { success: false, error: e.message, createdAt: new Date().toISOString() };
+      jsonResR({ error: e.message }, 500);
+    }
     return;
   }
 
@@ -403,20 +495,23 @@ function startCron() {
   stopCron();
   cronTimer = setInterval(async () => {
     try {
-      const s = getSettings();
-      if (!s.emailEnabled) return;
+      const emailConfig = getFullConfig().email;
+      if (!emailConfig.enabled || !isEmailConfigured(emailConfig)) return;
       const now = new Date();
       const curTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
       const todos = getTodos();
       for (const todo of todos) {
         if (!todo.reminderEnabled || !todo.reminderTime) continue;
         if (todo.reminderTime !== curTime) continue;
-        const recipient = todo.creatorEmail || DEFAULT_TO;
+        const recipient = todo.creatorEmail || emailConfig.recipients;
         if (!recipient) continue;
         try {
-          await sendEmail(recipient, `📋 任务提醒：${todo.title}`,
-            `您有一个待办任务还未完成：\n\n${todo.title}\n\n请及时处理。`);
-          console.log(`[REMINDER] Sent: ${todo.title}`);
+          await sendEmail(
+            recipient,
+            `📋 任务提醒：${todo.title}`,
+            `您有一个待办任务还未完成：\n\n${todo.title}\n\n请及时处理。`,
+            { email: emailConfig }
+          );
         } catch (e) {
           console.error(`[REMINDER] Failed: ${e.message}`);
         }
@@ -426,15 +521,44 @@ function startCron() {
   console.log('[CRON] started');
 }
 
+
+// ── Cloud backup timer ───────────────────────────────────
+let backupTimer = null;
+let lastBackup = null;
+
+function stopBackupTimer() {
+  if (backupTimer) { clearInterval(backupTimer); backupTimer = null; console.log('[BACKUP] stopped'); }
+}
+
+function startBackupTimer() {
+  stopBackupTimer();
+  const config = getBackupConfig();
+  if (!config.configured || !config.autoEnabled) return;
+  const intervalMs = config.intervalHours * 60 * 60 * 1000;
+  backupTimer = setInterval(async () => {
+    try {
+      saveDB();
+      lastBackup = await uploadBackup(BACKUP_PATHS, getBackupConfig());
+      console.log(`[BACKUP] uploaded: ${lastBackup.remotePath}`);
+    } catch (e) {
+      lastBackup = { success: false, error: e.message, createdAt: new Date().toISOString() };
+      console.error('[BACKUP] failed:', e.message);
+    }
+  }, intervalMs);
+  console.log(`[BACKUP] auto enabled: every ${config.intervalHours}h`);
+}
+
 // ── 启动 ─────────────────────────────────────────────────
 async function bootstrap() {
   try {
     await initDB();
-    console.log('[TODO] SQLite ready:', path.join(__dirname, 'todo.db'));
-    const s = getSettings();
-    const smtpReady = !!(process.env.TODO_SMTP_USER && process.env.TODO_SMTP_PASS);
-    console.log(`[TODO] SMTP: ${smtpReady}, emailEnabled: ${s.emailEnabled}`);
-    if (s.emailEnabled && smtpReady) startCron();
+    console.log('[TODO] SQLite ready:', DB_FILE);
+    migrateStoredConfigSecrets();
+    const appConfig = getFullConfig();
+    const smtpReady = isEmailConfigured(appConfig.email);
+    console.log(`[TODO] SMTP: ${smtpReady}, emailEnabled: ${appConfig.email.enabled}`);
+    if (appConfig.email.enabled && smtpReady) startCron();
+    startBackupTimer();
   } catch (e) {
     console.error('[TODO] Bootstrap error:', e.message);
     process.exit(1);
@@ -444,5 +568,5 @@ async function bootstrap() {
 bootstrap();
 server.listen(PORT, HOST, () => console.log(`TODO App → http://${HOST}:${PORT}`));
 
-process.on('SIGTERM', () => { closeDB(); process.exit(0); });
-process.on('SIGINT',  () => { closeDB(); process.exit(0); });
+process.on('SIGTERM', () => { stopBackupTimer(); closeDB(); process.exit(0); });
+process.on('SIGINT',  () => { stopBackupTimer(); closeDB(); process.exit(0); });
