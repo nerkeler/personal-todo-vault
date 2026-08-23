@@ -68,6 +68,8 @@ function isValidTime(value) {
 }
 
 const REMINDER_MODES = new Set(['once', 'weekly', 'count']);
+const WEEKDAY_NAMES = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const MAX_REMINDER_NOTE_CHARS = 4000;
 
 function normalizeReminderWeekdays(value) {
   if (!Array.isArray(value)) return [];
@@ -126,6 +128,60 @@ function ensureNoteFile(todo) {
     updateTodo(todo.id, { noteFile });
   }
   return { noteFile, filepath };
+}
+
+function reminderWeekdayText(days = []) {
+  const names = normalizeReminderWeekdays(days).map(day => WEEKDAY_NAMES[day]).filter(Boolean);
+  return names.length ? names.join('、') : '未选择星期';
+}
+
+function reminderRuleText(todo, mode) {
+  if (mode === 'weekly') return `每周重复：${reminderWeekdayText(todo.reminderWeekdays)}`;
+  if (mode === 'count') {
+    const total = Math.max(1, Number(todo.reminderRepeatCount) || 1);
+    const sent = Math.max(0, Number(todo.reminderSentCount) || 0);
+    const next = Math.min(sent + 1, total);
+    return `按次数重复：${reminderWeekdayText(todo.reminderWeekdays)}，共 ${total} 次，当前第 ${next}/${total} 次`;
+  }
+  return '单次提醒：发送成功后自动关闭';
+}
+
+function readReminderNote(todo) {
+  const candidates = [notePathFor(todo)];
+  if (todo.noteFile && path.basename(todo.noteFile) === todo.noteFile) {
+    candidates.push(path.join(NOTES_DIR, todo.noteFile));
+  }
+  for (const filepath of new Set(candidates)) {
+    try {
+      if (!fs.existsSync(filepath)) continue;
+      const note = fs.readFileSync(filepath, 'utf8').trim();
+      if (!note) return '（笔记为空）';
+      if (note.length <= MAX_REMINDER_NOTE_CHARS) return note;
+      return `${note.slice(0, MAX_REMINDER_NOTE_CHARS)}\n\n……（笔记内容较长，已截断）`;
+    } catch (e) {
+      console.error(`[REMINDER] read note failed: ${e.message}`);
+    }
+  }
+  return '（暂无笔记内容）';
+}
+
+function buildReminderEmailBody(todo, mode) {
+  const progress = Number.isFinite(Number(todo.progress)) ? Math.max(0, Math.min(100, Number(todo.progress))) : 0;
+  const note = readReminderNote(todo);
+  return [
+    '📋 TODO 任务提醒',
+    '',
+    `任务：${todo.title}`,
+    `提醒时间：${todo.reminderTime || '未设置'}`,
+    `重复规则：${reminderRuleText(todo, mode)}`,
+    `当前进度：${todo.completed ? 100 : progress}%`,
+    '',
+    '📝 Markdown 笔记',
+    '────────────────────',
+    note,
+    '',
+    '请及时处理。',
+  ].join('\n');
 }
 
 function removeTodoNote(todo) {
@@ -572,7 +628,7 @@ function startCron() {
           await sendEmail(
             recipient,
             `📋 任务提醒：${todo.title}`,
-            `您有一个待办任务还未完成：\n\n${todo.title}\n\n请及时处理。`,
+            buildReminderEmailBody(todo, mode),
             { email: emailConfig }
           );
           const sentCount = todo.reminderSentCount + 1;
