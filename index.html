@@ -615,6 +615,7 @@
     .todo-act-btn:hover { background: var(--border); color: var(--text); }
     .todo-act-btn.del:hover { background: var(--danger-light); color: var(--danger); }
     .todo-act-btn.has-note { color: var(--primary); }
+    .todo-act-btn.reminder-action.active { color: var(--primary); }
     .todo-act-btn.move {
       font-size: 13px;
       width: 28px; height: 28px;
@@ -726,6 +727,13 @@
     input:checked + .slider:before { transform: translateX(20px); }
     .modal-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
     .modal-label { font-size: 0.82rem; color: var(--text-2); font-weight: 500; }
+    .reminder-weekdays { display: flex; gap: 6px; flex-wrap: wrap; }
+    .reminder-day { position: relative; }
+    .reminder-day input { position: absolute; opacity: 0; pointer-events: none; }
+    .reminder-day span { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 32px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-2); font-size: 0.8rem; cursor: pointer; user-select: none; transition: all 0.15s; }
+    .reminder-day span:hover { border-color: var(--primary); color: var(--primary); }
+    .reminder-day input:checked + span { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .reminder-help { font-size: 0.74rem; color: var(--text-3); line-height: 1.5; margin-top: 5px; }
 
     .modal-input {
       height: 40px;
@@ -1197,10 +1205,35 @@
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
         <div class="modal-label" style="margin-bottom:0">启用提醒</div>
         <label class="switch">
-          <input type="checkbox" id="reminderEnabledToggle" onchange="saveReminderSettings()">
+          <input type="checkbox" id="reminderEnabledToggle">
           <span class="slider"></span>
         </label>
       </div>
+    </div>
+    <div class="modal-row">
+      <label class="modal-label" for="reminderModeInput">重复方式</label>
+      <select class="modal-input" id="reminderModeInput" onchange="toggleReminderRepeatFields()">
+        <option value="once">单次提醒</option>
+        <option value="weekly">每周重复</option>
+        <option value="count">按次数重复</option>
+      </select>
+      <div class="reminder-help">单次只发送一次；每周重复会按选中的星期持续发送；按次数重复达到总次数后自动关闭。</div>
+    </div>
+    <div class="modal-row" id="reminderWeekdaysRow">
+      <span class="modal-label">重复星期</span>
+      <div class="reminder-weekdays">
+        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="1"><span>周一</span></label>
+        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="2"><span>周二</span></label>
+        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="3"><span>周三</span></label>
+        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="4"><span>周四</span></label>
+        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="5"><span>周五</span></label>
+        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="6"><span>周六</span></label>
+        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="7"><span>周日</span></label>
+      </div>
+    </div>
+    <div class="modal-row" id="reminderRepeatCountRow" style="display:none">
+      <label class="modal-label" for="reminderRepeatCountInput">重复总次数</label>
+      <input class="modal-input" type="number" id="reminderRepeatCountInput" min="1" max="1000" step="1" value="4">
     </div>
     <div class="modal-row">
       <label class="modal-label">提醒时间</label>
@@ -1671,14 +1704,28 @@
   }
 
   /* ── Reminder Modal ── */
+  function toggleReminderRepeatFields() {
+    const mode = document.getElementById('reminderModeInput')?.value || 'once';
+    const weekdaysRow = document.getElementById('reminderWeekdaysRow');
+    const countRow = document.getElementById('reminderRepeatCountRow');
+    if (weekdaysRow) weekdaysRow.style.display = mode === 'once' ? 'none' : 'flex';
+    if (countRow) countRow.style.display = mode === 'count' ? 'flex' : 'none';
+  }
+
   function openReminderModal(todoId) {
     editingReminderTodoId = todoId;
     const t = todos.find(t => t.id === todoId);
     if (!t) return;
-    document.getElementById('reminderEnabledToggle').checked = t.reminderEnabled || false;
+    document.getElementById('reminderEnabledToggle').checked = !!t.reminderEnabled;
+    document.getElementById('reminderModeInput').value = t.reminderMode || 'once';
     document.getElementById('reminderTimeInput').value = t.reminderTime || '09:00';
+    document.getElementById('reminderRepeatCountInput').value = t.reminderRepeatCount || 4;
+    document.querySelectorAll('input[name="reminderWeekday"]').forEach(input => {
+      input.checked = (t.reminderWeekdays || []).includes(Number(input.value));
+    });
     document.getElementById('creatorEmailInput').value = t.creatorEmail || '';
-    document.getElementById('reminderModalTitle').textContent = '🔔 ' + (t.title.length > 12 ? t.title.slice(0, 12) + '…' : t.title);
+    document.getElementById('reminderModalTitle').textContent = (t.reminderEnabled ? '🔔 ' : '🔕 ') + (t.title.length > 12 ? t.title.slice(0, 12) + '…' : t.title);
+    toggleReminderRepeatFields();
     document.getElementById('reminderModal').classList.add('show');
   }
   function closeReminderModal() {
@@ -1688,19 +1735,31 @@
   async function saveReminderSettings() {
     if (!editingReminderTodoId) return;
     const reminderEnabled = document.getElementById('reminderEnabledToggle').checked;
+    const reminderMode = document.getElementById('reminderModeInput').value;
     const reminderTime = document.getElementById('reminderTimeInput').value;
+    const reminderWeekdays = [...document.querySelectorAll('input[name="reminderWeekday"]:checked')].map(input => Number(input.value));
+    const reminderRepeatCount = Math.max(1, Number(document.getElementById('reminderRepeatCountInput').value) || 1);
     const creatorEmail = document.getElementById('creatorEmailInput').value.trim();
+    const todoId = editingReminderTodoId;
+    const saveBtn = document.querySelector('#reminderModal .modal-btn.primary');
+    if (saveBtn) saveBtn.disabled = true;
     try {
-      const res = await fetch(API + '/todos/' + editingReminderTodoId, {
+      const res = await fetch(API + '/todos/' + todoId, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reminderEnabled, reminderTime, creatorEmail })
+        body: JSON.stringify({ reminderEnabled, reminderMode, reminderTime, reminderWeekdays, reminderRepeatCount, creatorEmail })
       });
       const updated = await res.json();
-      const idx = todos.findIndex(t => t.id === editingReminderTodoId);
+      if (!res.ok) throw new Error(updated.error || '保存提醒设置失败');
+      const idx = todos.findIndex(t => t.id === todoId);
       if (idx !== -1) todos[idx] = updated;
       closeReminderModal();
-    } catch (e) { console.error(e); }
+      render();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
   }
 
 
@@ -2004,7 +2063,7 @@
           </div>
         </div>
         <div class="todo-actions">
-          ${!t.completed ? `<button class="todo-act-btn" onclick="openReminderModal('${t.id}')" title="邮件提醒" style="${t.reminderEnabled ? 'color:var(--primary)' : ''}">${t.reminderEnabled ? '🔔' : '🔕'}</button>` : ''}
+          ${!t.completed ? `<button class="todo-act-btn reminder-action${t.reminderEnabled ? ' active' : ''}" onclick="openReminderModal('${t.id}')" title="${t.reminderEnabled ? '提醒已开启' : '提醒已关闭'}">${t.reminderEnabled ? '🔔' : '🔕'}</button>` : ''}
           <button class="todo-act-btn${t.noteFile ? ' has-note' : ''}" onclick="openNoteModal('${t.id}')" title="笔记">📄</button>
           <button class="todo-act-btn" onclick="startEditTodo('${t.id}')" title="编辑">✎</button>
           <button class="todo-act-btn del" onclick="deleteTodo('${t.id}')" title="删除">✕</button>

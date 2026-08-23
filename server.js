@@ -67,6 +67,29 @@ function isValidTime(value) {
   return typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
+const REMINDER_MODES = new Set(['once', 'weekly', 'count']);
+
+function normalizeReminderWeekdays(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(Number).filter(day => Number.isInteger(day) && day >= 1 && day <= 7))].sort((a, b) => a - b);
+}
+
+function localDateKey(date) {
+  const pad = value => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function isoWeekday(date) {
+  const day = date.getDay();
+  return day === 0 ? 7 : day;
+}
+
+function wasReminderSentOnLocalDate(value, date) {
+  if (!value) return false;
+  const sentAt = new Date(value);
+  return !Number.isNaN(sentAt.getTime()) && localDateKey(sentAt) === localDateKey(date);
+}
+
 function findTodo(id) {
   return getTodos().find(todo => todo.id === id) || null;
 }
@@ -414,8 +437,19 @@ const server = http.createServer(async (req, res) => {
         if (updates.reminderEnabled !== undefined && typeof updates.reminderEnabled !== 'boolean') {
           jsonResR({ error: 'reminderEnabled 必须是布尔值' }, 400); return;
         }
-        if (updates.reminderTime !== undefined && !isValidTime(updates.reminderTime)) {
-          jsonResR({ error: 'reminderTime 必须是 HH:MM 格式' }, 400); return;
+        if (updates.reminderTime !== undefined && updates.reminderTime !== '' && !isValidTime(updates.reminderTime)) {
+          jsonResR({ error: 'reminderTime 必须是 HH:MM 格式或留空' }, 400); return;
+        }
+        if (updates.reminderMode !== undefined && !REMINDER_MODES.has(updates.reminderMode)) {
+          jsonResR({ error: 'reminderMode 必须是 once、weekly 或 count' }, 400); return;
+        }
+        if (updates.reminderWeekdays !== undefined &&
+            (!Array.isArray(updates.reminderWeekdays) || normalizeReminderWeekdays(updates.reminderWeekdays).length !== updates.reminderWeekdays.length)) {
+          jsonResR({ error: 'reminderWeekdays 必须是 1-7 之间的星期数组' }, 400); return;
+        }
+        if (updates.reminderRepeatCount !== undefined &&
+            (!Number.isInteger(updates.reminderRepeatCount) || updates.reminderRepeatCount < 1 || updates.reminderRepeatCount > 1000)) {
+          jsonResR({ error: 'reminderRepeatCount 必须是 1-1000 的整数' }, 400); return;
         }
         if (updates.creatorEmail !== undefined &&
             (typeof updates.creatorEmail !== 'string' || updates.creatorEmail.length > 320)) {
@@ -429,7 +463,27 @@ const server = http.createServer(async (req, res) => {
           if (updates.progress !== undefined) kw.progress = updates.progress;
           if (updates.reminderEnabled !== undefined) kw.reminderEnabled = updates.reminderEnabled;
           if (updates.reminderTime !== undefined) kw.reminderTime = updates.reminderTime;
+          if (updates.reminderMode !== undefined) kw.reminderMode = updates.reminderMode;
+          if (updates.reminderWeekdays !== undefined) kw.reminderWeekdays = normalizeReminderWeekdays(updates.reminderWeekdays);
+          if (updates.reminderRepeatCount !== undefined) kw.reminderRepeatCount = updates.reminderRepeatCount;
+          if (updates.reminderSentCount !== undefined) kw.reminderSentCount = Math.max(0, Number(updates.reminderSentCount) || 0);
+          if (updates.reminderLastSentAt !== undefined) kw.reminderLastSentAt = cleanString(updates.reminderLastSentAt, 80);
           if (updates.creatorEmail !== undefined) kw.creatorEmail = updates.creatorEmail.trim();
+          const effectiveMode = kw.reminderMode || todo.reminderMode || 'once';
+          const effectiveWeekdays = kw.reminderWeekdays || todo.reminderWeekdays || [];
+          const effectiveEnabled = kw.reminderEnabled !== undefined ? kw.reminderEnabled : todo.reminderEnabled;
+          const effectiveTime = kw.reminderTime !== undefined ? kw.reminderTime : todo.reminderTime;
+          if (effectiveEnabled && !isValidTime(effectiveTime)) {
+            jsonResR({ error: '启用提醒时必须设置有效的提醒时间' }, 400); return;
+          }
+          if (effectiveEnabled && ['weekly', 'count'].includes(effectiveMode) && effectiveWeekdays.length === 0) {
+            jsonResR({ error: '每周重复或重复次数提醒至少选择一个星期' }, 400); return;
+          }
+          // 重新开启提醒或更换提醒规则时，从第 1 次重新计数。
+          if ((kw.reminderEnabled === true && !todo.reminderEnabled) || updates.reminderMode !== undefined || updates.reminderWeekdays !== undefined || updates.reminderRepeatCount !== undefined) {
+            kw.reminderSentCount = 0;
+            kw.reminderLastSentAt = '';
+          }
           const result = updateTodo(id, kw);
           jsonResR(result || { error: 'Todo not found' }, result ? 200 : 404);
         } catch (e) { jsonResR({ error: e.message }, 500); }
@@ -499,10 +553,19 @@ function startCron() {
       if (!emailConfig.enabled || !isEmailConfigured(emailConfig)) return;
       const now = new Date();
       const curTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      const weekday = isoWeekday(now);
       const todos = getTodos();
       for (const todo of todos) {
-        if (!todo.reminderEnabled || !todo.reminderTime) continue;
+        if (todo.completed || !todo.reminderEnabled || !todo.reminderTime) continue;
         if (todo.reminderTime !== curTime) continue;
+        // 防止服务重启或定时器抖动导致同一天重复发送。
+        if (wasReminderSentOnLocalDate(todo.reminderLastSentAt, now)) continue;
+        const mode = REMINDER_MODES.has(todo.reminderMode) ? todo.reminderMode : 'once';
+        if (mode !== 'once' && !todo.reminderWeekdays.includes(weekday)) continue;
+        if (mode === 'count' && todo.reminderSentCount >= todo.reminderRepeatCount) {
+          updateTodo(todo.id, { reminderEnabled: false });
+          continue;
+        }
         const recipient = todo.creatorEmail || emailConfig.recipients;
         if (!recipient) continue;
         try {
@@ -512,6 +575,14 @@ function startCron() {
             `您有一个待办任务还未完成：\n\n${todo.title}\n\n请及时处理。`,
             { email: emailConfig }
           );
+          const sentCount = todo.reminderSentCount + 1;
+          const finished = mode === 'once' || (mode === 'count' && sentCount >= todo.reminderRepeatCount);
+          updateTodo(todo.id, {
+            reminderEnabled: !finished,
+            reminderSentCount: sentCount,
+            reminderLastSentAt: now.toISOString(),
+          });
+          console.log(`[REMINDER] sent: ${todo.id} (${mode}, ${sentCount}${mode === 'count' ? `/${todo.reminderRepeatCount}` : ''})`);
         } catch (e) {
           console.error(`[REMINDER] Failed: ${e.message}`);
         }

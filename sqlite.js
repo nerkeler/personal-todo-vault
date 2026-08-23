@@ -53,6 +53,11 @@ async function initDB() {
     created_at TEXT NOT NULL,
     reminder_enabled INTEGER DEFAULT 0,
     reminder_time TEXT DEFAULT '',
+    reminder_mode TEXT DEFAULT 'once',
+    reminder_weekdays TEXT DEFAULT '[]',
+    reminder_repeat_count INTEGER DEFAULT 1,
+    reminder_sent_count INTEGER DEFAULT 0,
+    reminder_last_sent_at TEXT DEFAULT '',
     creator_email TEXT DEFAULT '',
     note_file TEXT DEFAULT ''
   )`);
@@ -66,11 +71,19 @@ async function initDB() {
   db.run('CREATE INDEX IF NOT EXISTS idx_todos_created ON todos(created_at)');
   db.run('CREATE INDEX IF NOT EXISTS idx_todos_reminder ON todos(reminder_enabled, reminder_time)');
 
-  // 兼容旧库：为已存在的 todos 表补充 note_file 列
+  // 兼容旧库：为已存在的 todos 表补充新增列
   const cols = db.exec(`PRAGMA table_info(todos)`);
   const colNames = (cols[0]?.values || []).map(r => r[1]);
-  if (!colNames.includes('note_file')) {
-    db.run(`ALTER TABLE todos ADD COLUMN note_file TEXT DEFAULT ''`);
+  const migrations = [
+    ['note_file', "ALTER TABLE todos ADD COLUMN note_file TEXT DEFAULT ''"],
+    ['reminder_mode', "ALTER TABLE todos ADD COLUMN reminder_mode TEXT DEFAULT 'once'"],
+    ['reminder_weekdays', "ALTER TABLE todos ADD COLUMN reminder_weekdays TEXT DEFAULT '[]'"],
+    ['reminder_repeat_count', "ALTER TABLE todos ADD COLUMN reminder_repeat_count INTEGER DEFAULT 1"],
+    ['reminder_sent_count', "ALTER TABLE todos ADD COLUMN reminder_sent_count INTEGER DEFAULT 0"],
+    ['reminder_last_sent_at', "ALTER TABLE todos ADD COLUMN reminder_last_sent_at TEXT DEFAULT ''"],
+  ];
+  for (const [name, sql] of migrations) {
+    if (!colNames.includes(name)) db.run(sql);
   }
 
   // 初始化默认分类
@@ -192,6 +205,22 @@ function reorderCategories(orderIds) {
   return true;
 }
 
+function parseReminderWeekdays(value) {
+  let days;
+  if (Array.isArray(value)) {
+    days = value;
+  } else {
+    try {
+      const parsed = JSON.parse(value || '[]');
+      days = Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      days = String(value || '').split(',');
+    }
+  }
+  return [...new Set(days.map(Number).filter(n => Number.isInteger(n) && n >= 1 && n <= 7))]
+    .sort((a, b) => a - b);
+}
+
 // ── Todos ─────────────────────────────────────────────
 function getTodos(categoryId) {
   const sql = categoryId
@@ -209,6 +238,11 @@ function getTodos(categoryId) {
     completed: !!r.completed,
     reminderEnabled: !!r.reminder_enabled,
     reminderTime: r.reminder_time || '',
+    reminderMode: ['once', 'weekly', 'count'].includes(r.reminder_mode) ? r.reminder_mode : 'once',
+    reminderWeekdays: parseReminderWeekdays(r.reminder_weekdays),
+    reminderRepeatCount: Math.max(1, Number(r.reminder_repeat_count) || 1),
+    reminderSentCount: Math.max(0, Number(r.reminder_sent_count) || 0),
+    reminderLastSentAt: r.reminder_last_sent_at || '',
     creatorEmail: r.creator_email || '',
     noteFile: r.note_file || null,
   }));
@@ -217,8 +251,8 @@ function getTodos(categoryId) {
 function createTodo(title, categoryId = 'cat_default') {
   const id = require('crypto').randomBytes(8).toString('hex') + require('crypto').randomBytes(4).toString('hex');
   const now = new Date().toISOString();
-  db.run(`INSERT INTO todos (id, title, completed, category_id, progress, created_at, reminder_enabled, reminder_time, creator_email, note_file)
-    VALUES (?, ?, 0, ?, 0, ?, 0, '', '', '')`, [id, title, categoryId, now]);
+  db.run(`INSERT INTO todos (id, title, completed, category_id, progress, created_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
+    VALUES (?, ?, 0, ?, 0, ?, 0, '', 'once', '[]', 1, 0, '', '', '')`, [id, title, categoryId, now]);
   saveDB();
   return getTodos().find(t => t.id === id);
 }
@@ -234,14 +268,19 @@ function updateTodo(id, kwargs) {
     progress: 'progress',
     reminderEnabled: 'reminder_enabled',
     reminderTime: 'reminder_time',
+    reminderMode: 'reminder_mode',
+    reminderWeekdays: 'reminder_weekdays',
+    reminderRepeatCount: 'reminder_repeat_count',
+    reminderSentCount: 'reminder_sent_count',
+    reminderLastSentAt: 'reminder_last_sent_at',
     creatorEmail: 'creator_email',
     noteFile: 'note_file',
   };
   for (const [jsKey, dbKey] of Object.entries(fieldMap)) {
     if (kwargs[jsKey] !== undefined) {
-      const val = typeof kwargs[jsKey] === 'boolean'
-        ? (kwargs[jsKey] ? 1 : 0)
-        : kwargs[jsKey];
+      let val = kwargs[jsKey];
+      if (typeof val === 'boolean') val = val ? 1 : 0;
+      if (jsKey === 'reminderWeekdays') val = JSON.stringify(Array.isArray(val) ? val : []);
       fields.push(`${dbKey}=?`);
       values.push(val);
     }
@@ -301,15 +340,21 @@ function migrateFromJSON(jsonFile, persist = true) {
     try {
       const reminderEnabled = todo.reminderEnabled ?? todo.reminder_enabled ?? false;
       const reminderTime = todo.reminderTime ?? todo.reminder_time ?? '';
+      const reminderMode = ['once', 'weekly', 'count'].includes(todo.reminderMode) ? todo.reminderMode : 'once';
+      const reminderWeekdays = JSON.stringify(parseReminderWeekdays(todo.reminderWeekdays ?? todo.reminder_weekdays));
+      const reminderRepeatCount = Math.max(1, Number(todo.reminderRepeatCount ?? todo.reminder_repeat_count) || 1);
+      const reminderSentCount = Math.max(0, Number(todo.reminderSentCount ?? todo.reminder_sent_count) || 0);
+      const reminderLastSentAt = todo.reminderLastSentAt ?? todo.reminder_last_sent_at ?? '';
       const creatorEmail = todo.creatorEmail ?? todo.creator_email ?? '';
       const noteFile = todo.noteFile ?? todo.note_file ?? '';
       db.run(`INSERT OR IGNORE INTO todos
-        (id, title, completed, category_id, progress, created_at, reminder_enabled, reminder_time, creator_email, note_file)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, title, completed, category_id, progress, created_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [todo.id, todo.title, todo.completed ? 1 : 0,
          todo.categoryId || 'cat_default', todo.progress || 0,
          todo.createdAt || '', reminderEnabled ? 1 : 0,
-         reminderTime, creatorEmail, noteFile]);
+         reminderTime, reminderMode, reminderWeekdays, reminderRepeatCount, reminderSentCount,
+         reminderLastSentAt, creatorEmail, noteFile]);
     } catch (e) { /* ignore dup */ }
   }
 

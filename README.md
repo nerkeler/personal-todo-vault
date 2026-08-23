@@ -30,7 +30,7 @@ HOST=0.0.0.0 npm start
 - 🗂️ 自定义分类、图标与分类排序
 - 📄 每个待办关联 Markdown 笔记，支持预览与编辑
 - 📈 进度记录（0–100%，到 100% 自动完成）
-- 🔔 可选的邮件提醒
+- 🔔 可选的邮件提醒：支持单次、每周指定星期、按次数重复
 - ☁️ 坚果云 WebDAV 云端数据备份
 - 🌙 明暗主题与移动端适配
 - 💾 SQLite 数据持久化，启动时兼容迁移旧版 `data.json`
@@ -78,7 +78,9 @@ HOST=0.0.0.0 npm start
 | POST | `/api/backup/run` | 立即生成并上传云端备份 |
 | GET | `/api/icons` | 获取预设分类图标 |
 
-待办接口统一使用 camelCase 字段，例如 `categoryId`、`createdAt`、`reminderEnabled`、`reminderTime`、`creatorEmail`、`noteFile`。
+待办接口统一使用 camelCase 字段，例如 `categoryId`、`createdAt`、`reminderEnabled`、`reminderTime`、`reminderMode`、`reminderWeekdays`、`reminderRepeatCount`、`creatorEmail`、`noteFile`。
+
+提醒规则：`reminderMode` 可设为 `once`（单次发送一次）、`weekly`（按 `reminderWeekdays` 中的星期持续发送）或 `count`（按选中的星期发送，累计达到 `reminderRepeatCount` 次后自动关闭）。星期使用 ISO 编号：1=周一，…，7=周日。每条待办每天最多发送一次；已完成待办不会继续发送提醒。重新开启或修改规则会从第 1 次重新计数。
 
 ## 页面配置
 
