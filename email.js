@@ -45,6 +45,7 @@ async function sendEmail(to, subject, body, extra = {}) {
     to: recipient,
     subject,
     text: body,
+    ...(extra.html ? { html: extra.html } : {}),
   });
   return { success: true, messageId: info.messageId, to: recipient };
 }

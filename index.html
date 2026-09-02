@@ -749,6 +749,97 @@
     }
     .modal-input:focus { border-color: var(--primary); }
 
+    /* Reminder modal */
+    .reminder-modal { max-width: 480px; max-height: calc(100vh - 40px); overflow-y: auto; padding: 26px; }
+    .reminder-modal-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .reminder-title-group { min-width: 0; }
+    .reminder-kicker {
+      color: var(--primary);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin-bottom: 5px;
+    }
+    .reminder-modal-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    .reminder-modal-subtitle,
+    .reminder-status-copy,
+    .reminder-field-hint {
+      color: var(--text-3);
+      font-size: 0.74rem;
+      line-height: 1.5;
+    }
+    .reminder-modal-subtitle { margin-top: 3px; }
+    .reminder-task-context {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      margin-bottom: 18px;
+      background: var(--primary-light);
+      border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
+      border-radius: var(--radius-sm);
+      color: var(--primary);
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .reminder-task-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reminder-progress-chip { flex-shrink: 0; color: var(--accent); }
+    .reminder-section {
+      padding: 16px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+    }
+    .reminder-section:last-of-type { margin-bottom: 0; }
+    .reminder-section-heading {
+      color: var(--text);
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .reminder-status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .reminder-status-copy { margin-top: 3px; }
+    .reminder-fieldset {
+      border: 0;
+      padding: 0;
+      min-width: 0;
+    }
+    .reminder-fieldset legend { padding: 0; }
+    .reminder-help { margin-top: 7px; }
+    .reminder-field-hint { margin-top: 6px; }
+    .reminder-form-actions { display: flex; gap: 10px; margin-top: 16px; }
+    .reminder-form-actions .modal-btn { flex: 1; height: 40px; }
+    .reminder-modal .modal-close:focus-visible,
+    .reminder-modal .switch input:focus-visible + .slider,
+    .reminder-modal .reminder-day input:focus-visible + span {
+      outline: 3px solid var(--primary-light);
+      outline-offset: 2px;
+    }
+    @media (max-width: 520px) {
+      .reminder-modal { max-height: calc(100vh - 24px); padding: 22px 18px; }
+      .reminder-task-context { align-items: flex-start; flex-direction: column; gap: 3px; }
+      .reminder-task-meta { max-width: 100%; white-space: normal; }
+      .reminder-progress-chip { align-self: flex-start; }
+    }
+
 
     .settings-modal {
       max-width: 760px;
@@ -1196,56 +1287,77 @@
 </div>
 
 <div class="modal-overlay" id="reminderModal">
-  <div class="modal">
-    <div class="modal-title">
-      <span id="reminderModalTitle">🔔 任务提醒</span>
-      <button class="modal-close" onclick="closeReminderModal()">✕</button>
+  <div class="modal reminder-modal">
+    <div class="reminder-modal-head">
+      <div class="reminder-title-group">
+        <div class="reminder-kicker">任务提醒</div>
+        <div class="reminder-modal-title" id="reminderModalTitle">🔔 任务提醒</div>
+        <div class="reminder-modal-subtitle">设置发送时间、重复方式和接收对象</div>
+      </div>
+      <button class="modal-close" onclick="closeReminderModal()" aria-label="关闭提醒设置">✕</button>
     </div>
-    <div class="modal-row">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-        <div class="modal-label" style="margin-bottom:0">启用提醒</div>
+    <div class="reminder-task-context">
+      <span class="reminder-task-meta" id="reminderTaskMeta">📋 默认 · 待完成</span>
+      <span class="reminder-progress-chip" id="reminderTaskProgress">进度 0%</span>
+    </div>
+    <section class="reminder-section">
+      <div class="reminder-status-row">
+        <div>
+          <div class="modal-label">启用提醒</div>
+          <div class="reminder-status-copy" id="reminderStatusCopy" aria-live="polite">关闭后不会发送新的提醒邮件。</div>
+        </div>
         <label class="switch">
-          <input type="checkbox" id="reminderEnabledToggle">
+          <input type="checkbox" id="reminderEnabledToggle" aria-label="启用任务提醒" onchange="updateReminderStatusCopy()">
           <span class="slider"></span>
         </label>
       </div>
-    </div>
-    <div class="modal-row">
-      <label class="modal-label" for="reminderModeInput">重复方式</label>
-      <select class="modal-input" id="reminderModeInput" onchange="toggleReminderRepeatFields()">
-        <option value="once">单次提醒</option>
-        <option value="weekly">每周重复</option>
-        <option value="count">按次数重复</option>
-      </select>
-      <div class="reminder-help">单次只发送一次；每周重复会按选中的星期持续发送；按次数重复达到总次数后自动关闭。</div>
-    </div>
-    <div class="modal-row" id="reminderWeekdaysRow">
-      <span class="modal-label">重复星期</span>
-      <div class="reminder-weekdays">
-        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="1"><span>周一</span></label>
-        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="2"><span>周二</span></label>
-        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="3"><span>周三</span></label>
-        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="4"><span>周四</span></label>
-        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="5"><span>周五</span></label>
-        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="6"><span>周六</span></label>
-        <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="7"><span>周日</span></label>
+    </section>
+    <section class="reminder-section">
+      <div class="reminder-section-heading">发送计划</div>
+      <div class="modal-row">
+        <label class="modal-label" for="reminderModeInput">重复方式</label>
+        <select class="modal-input" id="reminderModeInput" onchange="toggleReminderRepeatFields()">
+          <option value="once">单次提醒</option>
+          <option value="weekly">每周重复</option>
+          <option value="count">按次数重复</option>
+        </select>
+        <div class="reminder-help" id="reminderModeHelp">发送成功后自动关闭，不会重复打扰。</div>
       </div>
-    </div>
-    <div class="modal-row" id="reminderRepeatCountRow" style="display:none">
-      <label class="modal-label" for="reminderRepeatCountInput">重复总次数</label>
-      <input class="modal-input" type="number" id="reminderRepeatCountInput" min="1" max="1000" step="1" value="4">
-    </div>
-    <div class="modal-row">
-      <label class="modal-label">提醒时间</label>
-      <input class="modal-input" type="time" id="reminderTimeInput" value="09:00" style="height:40px;padding:0 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--bg);color:var(--text);">
-    </div>
-    <div class="modal-row">
-      <label class="modal-label">接收邮箱</label>
-      <input class="modal-input" type="email" id="creatorEmailInput" placeholder="可选：单独指定该任务收件人；不填使用配置中心收件人" style="height:40px;padding:0 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--bg);color:var(--text);">
-    </div>
-    <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="modal-btn cancel" style="flex:1;height:38px;border:none;border-radius:var(--radius-sm);font-size:0.85rem;cursor:pointer" onclick="closeReminderModal()">取消</button>
-      <button class="modal-btn primary" style="flex:1;height:38px;border:none;border-radius:var(--radius-sm);font-size:0.85rem;cursor:pointer;background:var(--primary);color:#fff" onclick="saveReminderSettings()">保存</button>
+      <fieldset class="modal-row reminder-fieldset" id="reminderWeekdaysRow">
+        <legend class="modal-label">重复星期</legend>
+        <div class="reminder-weekdays">
+          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="1"><span>周一</span></label>
+          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="2"><span>周二</span></label>
+          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="3"><span>周三</span></label>
+          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="4"><span>周四</span></label>
+          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="5"><span>周五</span></label>
+          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="6"><span>周六</span></label>
+          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="7"><span>周日</span></label>
+        </div>
+        <div class="reminder-help" id="reminderWeekdaysHelp">选择至少一个发送日。</div>
+      </fieldset>
+      <div class="modal-row" id="reminderRepeatCountRow" style="display:none">
+        <label class="modal-label" for="reminderRepeatCountInput">重复总次数</label>
+        <input class="modal-input" type="number" id="reminderRepeatCountInput" min="1" max="1000" step="1" value="4">
+        <div class="reminder-field-hint">达到总次数后，提醒会自动关闭。</div>
+      </div>
+      <div class="modal-row">
+        <label class="modal-label" for="reminderTimeInput">提醒时间</label>
+        <input class="modal-input" type="time" id="reminderTimeInput" value="09:00">
+        <div class="reminder-field-hint">按服务所在设备的本地时间发送。</div>
+      </div>
+    </section>
+    <section class="reminder-section">
+      <div class="reminder-section-heading">发送对象</div>
+      <div class="modal-row" style="margin-bottom:0">
+        <label class="modal-label" for="creatorEmailInput">接收邮箱</label>
+        <input class="modal-input" type="email" id="creatorEmailInput" placeholder="选填，留空使用配置中心收件人">
+        <div class="reminder-field-hint">只对当前任务生效，不会修改全局邮件配置。</div>
+      </div>
+    </section>
+    <div class="reminder-form-actions">
+      <button class="modal-btn cancel" onclick="closeReminderModal()">取消</button>
+      <button class="modal-btn primary" onclick="saveReminderSettings()">保存提醒</button>
     </div>
   </div>
 </div>
@@ -1704,18 +1816,40 @@
   }
 
   /* ── Reminder Modal ── */
+  function updateReminderStatusCopy() {
+    const enabled = document.getElementById('reminderEnabledToggle')?.checked;
+    const copy = document.getElementById('reminderStatusCopy');
+    if (copy) copy.textContent = enabled
+      ? '到点发送；单次提醒成功后关闭，重复提醒按计划继续。'
+      : '关闭后不会发送新的提醒邮件。';
+  }
+
   function toggleReminderRepeatFields() {
     const mode = document.getElementById('reminderModeInput')?.value || 'once';
     const weekdaysRow = document.getElementById('reminderWeekdaysRow');
     const countRow = document.getElementById('reminderRepeatCountRow');
+    const modeHelp = document.getElementById('reminderModeHelp');
+    const weekdaysHelp = document.getElementById('reminderWeekdaysHelp');
     if (weekdaysRow) weekdaysRow.style.display = mode === 'once' ? 'none' : 'flex';
     if (countRow) countRow.style.display = mode === 'count' ? 'flex' : 'none';
+    if (modeHelp) modeHelp.textContent = mode === 'once'
+      ? '发送成功后自动关闭，不会重复打扰。'
+      : mode === 'weekly'
+        ? '在选中的星期按时发送，直到手动关闭或任务完成。'
+        : '按选中的星期发送，达到总次数后自动关闭。';
+    if (weekdaysHelp) weekdaysHelp.textContent = mode === 'count'
+      ? '选择发送日，每个选中日最多发送一次。'
+      : '选择至少一个发送日。';
   }
 
   function openReminderModal(todoId) {
     editingReminderTodoId = todoId;
     const t = todos.find(t => t.id === todoId);
     if (!t) return;
+    const cat = categories.find(category => category.id === t.categoryId);
+    const taskMeta = document.getElementById('reminderTaskMeta');
+    const taskProgress = document.getElementById('reminderTaskProgress');
+    const progress = t.completed ? 100 : Math.max(0, Math.min(100, Number(t.progress) || 0));
     document.getElementById('reminderEnabledToggle').checked = !!t.reminderEnabled;
     document.getElementById('reminderModeInput').value = t.reminderMode || 'once';
     document.getElementById('reminderTimeInput').value = t.reminderTime || '09:00';
@@ -1724,7 +1858,10 @@
       input.checked = (t.reminderWeekdays || []).includes(Number(input.value));
     });
     document.getElementById('creatorEmailInput').value = t.creatorEmail || '';
-    document.getElementById('reminderModalTitle').textContent = (t.reminderEnabled ? '🔔 ' : '🔕 ') + (t.title.length > 12 ? t.title.slice(0, 12) + '…' : t.title);
+    document.getElementById('reminderModalTitle').textContent = (t.reminderEnabled ? '🔔 ' : '🔕 ') + t.title;
+    if (taskMeta) taskMeta.textContent = `${cat ? cat.icon + ' ' + cat.name : '📋 默认'} · 待完成`;
+    if (taskProgress) taskProgress.textContent = `进度 ${progress}%`;
+    updateReminderStatusCopy();
     toggleReminderRepeatFields();
     document.getElementById('reminderModal').classList.add('show');
   }
