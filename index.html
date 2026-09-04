@@ -727,13 +727,162 @@
     input:checked + .slider:before { transform: translateX(20px); }
     .modal-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
     .modal-label { font-size: 0.82rem; color: var(--text-2); font-weight: 500; }
-    .reminder-weekdays { display: flex; gap: 6px; flex-wrap: wrap; }
+    .reminder-date-controls { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 9px; }
+    .reminder-date-preset {
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.74rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .reminder-date-preset:hover,
+    .reminder-date-preset:focus-visible { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+    .reminder-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
     .reminder-day { position: relative; }
     .reminder-day input { position: absolute; opacity: 0; pointer-events: none; }
-    .reminder-day span { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 32px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-2); font-size: 0.8rem; cursor: pointer; user-select: none; transition: all 0.15s; }
+    .reminder-day span { display: inline-flex; align-items: center; justify-content: center; width: 100%; min-width: 0; height: 40px; padding: 0 3px; border: 1px solid var(--border); border-radius: 10px; color: var(--text-2); font-size: 0.78rem; cursor: pointer; user-select: none; transition: all 0.15s; }
     .reminder-day span:hover { border-color: var(--primary); color: var(--primary); }
-    .reminder-day input:checked + span { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .reminder-day input:checked + span { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 0 0 2px var(--primary-light); }
+    .reminder-date-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; color: var(--primary); font-size: 0.76rem; font-weight: 600; }
+    .reminder-date-count { flex-shrink: 0; color: var(--text-3); font-weight: 500; }
+    .reminder-date-error { min-height: 0; margin-top: 6px; color: var(--danger); font-size: 0.74rem; line-height: 1.5; }
     .reminder-help { font-size: 0.74rem; color: var(--text-3); line-height: 1.5; margin-top: 5px; }
+
+    .reminder-time-picker { display: flex; flex-direction: column; gap: 9px; }
+    .reminder-time-hero {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 12px 13px;
+      border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+      border-radius: 14px;
+      background: var(--surface);
+    }
+    .reminder-time-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 36px;
+      width: 36px;
+      height: 36px;
+      color: var(--primary);
+      background: var(--primary-light);
+      border-radius: 10px;
+    }
+    .reminder-time-icon svg { width: 19px; height: 19px; }
+    .reminder-time-input {
+      display: block;
+      width: 108px;
+      padding: 0;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 1.55rem;
+      font-weight: 750;
+      line-height: 1.15;
+      letter-spacing: -0.035em;
+      font-variant-numeric: tabular-nums;
+      caret-color: var(--primary);
+    }
+    .reminder-time-input:focus { border-bottom-color: var(--primary); }
+    .reminder-time-context { margin-top: 3px; color: var(--text-3); font-size: 0.72rem; }
+    .reminder-time-zone {
+      flex-shrink: 0;
+      margin-left: auto;
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-3);
+      background: var(--bg);
+      font-size: 0.68rem;
+      white-space: nowrap;
+    }
+    .reminder-time-presets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+    .reminder-time-preset {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      padding: 8px 7px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+      color: var(--text-2);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .reminder-time-preset:hover,
+    .reminder-time-preset:focus-visible,
+    .reminder-time-preset.active {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      color: var(--primary);
+    }
+    .reminder-time-preset span { overflow: hidden; font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
+    .reminder-time-preset strong { font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+    .reminder-time-adjust { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+    .reminder-time-adjust-card {
+      display: grid;
+      grid-template-columns: 29px minmax(0, 1fr) 29px;
+      align-items: center;
+      gap: 5px;
+      padding: 5px;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--bg);
+    }
+    .reminder-time-adjust-label { grid-column: 1 / -1; padding: 1px 4px 0; color: var(--text-3); font-size: 0.68rem; }
+    .reminder-time-stepper {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 29px;
+      height: 29px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text-2);
+      font: inherit;
+      font-size: 1.05rem;
+      line-height: 1;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .reminder-time-stepper:hover,
+    .reminder-time-stepper:focus-visible { background: var(--primary-light); color: var(--primary); }
+    .reminder-time-output { color: var(--text); font-size: 1rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+    .reminder-time-minutes { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
+    .reminder-minute-chip {
+      height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.74rem;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .reminder-minute-chip:hover,
+    .reminder-minute-chip:focus-visible,
+    .reminder-minute-chip.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
+    .reminder-time-error { min-height: 0; margin-top: 2px; color: var(--danger); font-size: 0.74rem; line-height: 1.5; }
+
+    @media (max-width: 520px) {
+      .reminder-time-presets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
 
     .modal-input {
       height: 40px;
@@ -1324,17 +1473,28 @@
         <div class="reminder-help" id="reminderModeHelp">发送成功后自动关闭，不会重复打扰。</div>
       </div>
       <fieldset class="modal-row reminder-fieldset" id="reminderWeekdaysRow">
-        <legend class="modal-label">重复星期</legend>
+        <legend class="modal-label">发送日</legend>
+        <div class="reminder-date-controls" role="toolbar" aria-label="快捷选择发送日">
+          <button class="reminder-date-preset" type="button" onclick="setReminderWeekdays('workdays')">工作日</button>
+          <button class="reminder-date-preset" type="button" onclick="setReminderWeekdays('everyday')">每天</button>
+          <button class="reminder-date-preset" type="button" onclick="setReminderWeekdays('weekend')">周末</button>
+          <button class="reminder-date-preset" type="button" onclick="setReminderWeekdays('clear')">清空</button>
+        </div>
         <div class="reminder-weekdays">
-          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="1"><span>周一</span></label>
-          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="2"><span>周二</span></label>
-          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="3"><span>周三</span></label>
-          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="4"><span>周四</span></label>
-          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="5"><span>周五</span></label>
-          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="6"><span>周六</span></label>
-          <label class="reminder-day"><input type="checkbox" name="reminderWeekday" value="7"><span>周日</span></label>
+          <label class="reminder-day" title="周一"><input type="checkbox" name="reminderWeekday" value="1" onchange="updateReminderWeekdaysSummary()"><span>周一</span></label>
+          <label class="reminder-day" title="周二"><input type="checkbox" name="reminderWeekday" value="2" onchange="updateReminderWeekdaysSummary()"><span>周二</span></label>
+          <label class="reminder-day" title="周三"><input type="checkbox" name="reminderWeekday" value="3" onchange="updateReminderWeekdaysSummary()"><span>周三</span></label>
+          <label class="reminder-day" title="周四"><input type="checkbox" name="reminderWeekday" value="4" onchange="updateReminderWeekdaysSummary()"><span>周四</span></label>
+          <label class="reminder-day" title="周五"><input type="checkbox" name="reminderWeekday" value="5" onchange="updateReminderWeekdaysSummary()"><span>周五</span></label>
+          <label class="reminder-day" title="周六"><input type="checkbox" name="reminderWeekday" value="6" onchange="updateReminderWeekdaysSummary()"><span>周六</span></label>
+          <label class="reminder-day" title="周日"><input type="checkbox" name="reminderWeekday" value="7" onchange="updateReminderWeekdaysSummary()"><span>周日</span></label>
+        </div>
+        <div class="reminder-date-summary">
+          <span id="reminderWeekdaysSummary">尚未选择发送日</span>
+          <span class="reminder-date-count" id="reminderWeekdaysCount">0 天</span>
         </div>
         <div class="reminder-help" id="reminderWeekdaysHelp">选择至少一个发送日。</div>
+        <div class="reminder-date-error" id="reminderWeekdaysError" role="alert"></div>
       </fieldset>
       <div class="modal-row" id="reminderRepeatCountRow" style="display:none">
         <label class="modal-label" for="reminderRepeatCountInput">重复总次数</label>
@@ -1342,9 +1502,59 @@
         <div class="reminder-field-hint">达到总次数后，提醒会自动关闭。</div>
       </div>
       <div class="modal-row">
-        <label class="modal-label" for="reminderTimeInput">提醒时间</label>
-        <input class="modal-input" type="time" id="reminderTimeInput" value="09:00">
-        <div class="reminder-field-hint">按服务所在设备的本地时间发送。</div>
+        <div class="modal-label">提醒时间</div>
+        <div class="reminder-time-picker" role="group" aria-label="选择提醒时间">
+          <div class="reminder-time-hero">
+            <span class="reminder-time-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="8.5"></circle>
+                <path d="M12 7.5v4.8l3.2 1.8"></path>
+              </svg>
+            </span>
+            <div>
+              <input class="reminder-time-input" type="text" id="reminderTimeInput" value="09:00" inputmode="numeric" maxlength="5" spellcheck="false" aria-label="提醒时间，格式 HH:MM" aria-describedby="reminderTimeHint reminderTimeError" oninput="syncReminderTimePicker()" onblur="commitReminderTimeInput()">
+              <div class="reminder-time-context" id="reminderTimeContext" aria-live="polite">上午 · 早间</div>
+            </div>
+            <span class="reminder-time-zone">本地时间</span>
+          </div>
+          <div class="reminder-time-presets" role="group" aria-label="常用时间">
+            <button class="reminder-time-preset" type="button" data-reminder-time="08:00" onclick="setReminderTime('08:00')"><span>早起</span><strong>08:00</strong></button>
+            <button class="reminder-time-preset" type="button" data-reminder-time="09:00" onclick="setReminderTime('09:00')"><span>工作开始</span><strong>09:00</strong></button>
+            <button class="reminder-time-preset" type="button" data-reminder-time="12:00" onclick="setReminderTime('12:00')"><span>午间</span><strong>12:00</strong></button>
+            <button class="reminder-time-preset" type="button" data-reminder-time="18:00" onclick="setReminderTime('18:00')"><span>下班后</span><strong>18:00</strong></button>
+            <button class="reminder-time-preset" type="button" data-reminder-time="21:00" onclick="setReminderTime('21:00')"><span>睡前</span><strong>21:00</strong></button>
+          </div>
+          <div class="reminder-time-adjust">
+            <div class="reminder-time-adjust-card">
+              <span class="reminder-time-adjust-label">小时</span>
+              <button class="reminder-time-stepper" type="button" aria-label="减少小时" onclick="adjustReminderTime('hour', -1)">−</button>
+              <output class="reminder-time-output" id="reminderHourValue">09</output>
+              <button class="reminder-time-stepper" type="button" aria-label="增加小时" onclick="adjustReminderTime('hour', 1)">+</button>
+            </div>
+            <div class="reminder-time-adjust-card">
+              <span class="reminder-time-adjust-label">分钟</span>
+              <button class="reminder-time-stepper" type="button" aria-label="减少分钟" onclick="adjustReminderTime('minute', -1)">−</button>
+              <output class="reminder-time-output" id="reminderMinuteValue">00</output>
+              <button class="reminder-time-stepper" type="button" aria-label="增加分钟" onclick="adjustReminderTime('minute', 1)">+</button>
+            </div>
+          </div>
+          <div class="reminder-time-minutes" role="group" aria-label="选择分钟">
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="00" onclick="setReminderMinute(0)">00</button>
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="05" onclick="setReminderMinute(5)">05</button>
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="10" onclick="setReminderMinute(10)">10</button>
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="15" onclick="setReminderMinute(15)">15</button>
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="20" onclick="setReminderMinute(20)">20</button>
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="25" onclick="setReminderMinute(25)">25</button>
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="30" onclick="setReminderMinute(30)">30</button>
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="35" onclick="setReminderMinute(35)">35</button>
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="40" onclick="setReminderMinute(40)">40</button>
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="45" onclick="setReminderMinute(45)">45</button>
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="50" onclick="setReminderMinute(50)">50</button>
+            <button class="reminder-minute-chip" type="button" data-reminder-minute="55" onclick="setReminderMinute(55)">55</button>
+          </div>
+        </div>
+        <div class="reminder-field-hint" id="reminderTimeHint">可直接输入 09:00，也可以选择常用时间或按 5 分钟刻度调整。</div>
+        <div class="reminder-time-error" id="reminderTimeError" role="alert"></div>
       </div>
     </section>
     <section class="reminder-section">
@@ -1816,6 +2026,132 @@
   }
 
   /* ── Reminder Modal ── */
+  function getReminderWeekdays() {
+    return [...document.querySelectorAll('input[name="reminderWeekday"]:checked')]
+      .map(input => Number(input.value));
+  }
+
+  function updateReminderWeekdaysSummary() {
+    const names = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    const selected = getReminderWeekdays();
+    const summary = document.getElementById('reminderWeekdaysSummary');
+    const count = document.getElementById('reminderWeekdaysCount');
+    const error = document.getElementById('reminderWeekdaysError');
+    if (summary) summary.textContent = selected.length === 0
+      ? '尚未选择发送日'
+      : selected.length === 7
+        ? '每天'
+        : selected.map(day => names[day]).join('、');
+    if (count) count.textContent = `已选 ${selected.length} 天`;
+    if (selected.length > 0 && error) error.textContent = '';
+  }
+
+  function setReminderWeekdays(preset) {
+    const presets = {
+      workdays: [1, 2, 3, 4, 5],
+      everyday: [1, 2, 3, 4, 5, 6, 7],
+      weekend: [6, 7],
+      clear: [],
+    };
+    const selected = new Set(presets[preset] || []);
+    document.querySelectorAll('input[name="reminderWeekday"]').forEach(input => {
+      input.checked = selected.has(Number(input.value));
+    });
+    updateReminderWeekdaysSummary();
+  }
+
+  function parseReminderTime(value) {
+    const raw = String(value || '').trim().replace('：', ':');
+    let match = raw.match(/^(\d{1,2}):(\d{1,2})$/);
+    if (!match && /^\d{3,4}$/.test(raw)) {
+      match = [raw, raw.slice(0, -2), raw.slice(-2)];
+    }
+    if (!match) return null;
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour > 23 || minute > 59) return null;
+    return { hour, minute, value: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` };
+  }
+
+  function reminderTimePeriod(hour) {
+    if (hour < 5) return '深夜';
+    if (hour < 12) return '上午';
+    if (hour < 14) return '中午';
+    if (hour < 18) return '下午';
+    return '晚上';
+  }
+
+  function reminderTimeScene(hour) {
+    if (hour < 7) return '夜间';
+    if (hour < 10) return '早间';
+    if (hour < 12) return '上午';
+    if (hour < 14) return '午间';
+    if (hour < 18) return '下午';
+    if (hour < 21) return '傍晚';
+    return '夜间';
+  }
+
+  function updateReminderTimePicker() {
+    const input = document.getElementById('reminderTimeInput');
+    const parsed = parseReminderTime(input?.value);
+    if (!parsed) return;
+    const hourValue = document.getElementById('reminderHourValue');
+    const minuteValue = document.getElementById('reminderMinuteValue');
+    const context = document.getElementById('reminderTimeContext');
+    if (hourValue) hourValue.textContent = String(parsed.hour).padStart(2, '0');
+    if (minuteValue) minuteValue.textContent = String(parsed.minute).padStart(2, '0');
+    if (context) context.textContent = `${reminderTimePeriod(parsed.hour)} · ${reminderTimeScene(parsed.hour)}`;
+    document.querySelectorAll('[data-reminder-time]').forEach(button => {
+      const active = button.dataset.reminderTime === parsed.value;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    document.querySelectorAll('[data-reminder-minute]').forEach(button => {
+      const active = Number(button.dataset.reminderMinute) === parsed.minute;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    const error = document.getElementById('reminderTimeError');
+    if (error) error.textContent = '';
+  }
+
+  function setReminderTime(value) {
+    const parsed = parseReminderTime(value);
+    const input = document.getElementById('reminderTimeInput');
+    if (!parsed || !input) return;
+    input.value = parsed.value;
+    updateReminderTimePicker();
+  }
+
+  function syncReminderTimePicker() {
+    if (parseReminderTime(document.getElementById('reminderTimeInput')?.value)) updateReminderTimePicker();
+  }
+
+  function commitReminderTimeInput() {
+    const input = document.getElementById('reminderTimeInput');
+    const parsed = parseReminderTime(input?.value);
+    const error = document.getElementById('reminderTimeError');
+    if (!parsed) {
+      if (error) error.textContent = '请输入有效时间，例如 09:00（小时 00–23，分钟 00–59）。';
+      return false;
+    }
+    input.value = parsed.value;
+    updateReminderTimePicker();
+    return true;
+  }
+
+  function adjustReminderTime(part, delta) {
+    const parsed = parseReminderTime(document.getElementById('reminderTimeInput')?.value) || parseReminderTime('09:00');
+    if (part === 'hour') parsed.hour = (parsed.hour + delta + 24) % 24;
+    if (part === 'minute') parsed.minute = (parsed.minute + delta + 60) % 60;
+    setReminderTime(`${parsed.hour}:${parsed.minute}`);
+  }
+
+  function setReminderMinute(minute) {
+    const parsed = parseReminderTime(document.getElementById('reminderTimeInput')?.value) || parseReminderTime('09:00');
+    setReminderTime(`${parsed.hour}:${Number(minute)}`);
+  }
+
   function updateReminderStatusCopy() {
     const enabled = document.getElementById('reminderEnabledToggle')?.checked;
     const copy = document.getElementById('reminderStatusCopy');
@@ -1840,6 +2176,7 @@
     if (weekdaysHelp) weekdaysHelp.textContent = mode === 'count'
       ? '选择发送日，每个选中日最多发送一次。'
       : '选择至少一个发送日。';
+    updateReminderWeekdaysSummary();
   }
 
   function openReminderModal(todoId) {
@@ -1852,7 +2189,7 @@
     const progress = t.completed ? 100 : Math.max(0, Math.min(100, Number(t.progress) || 0));
     document.getElementById('reminderEnabledToggle').checked = !!t.reminderEnabled;
     document.getElementById('reminderModeInput').value = t.reminderMode || 'once';
-    document.getElementById('reminderTimeInput').value = t.reminderTime || '09:00';
+    setReminderTime(t.reminderTime || '09:00');
     document.getElementById('reminderRepeatCountInput').value = t.reminderRepeatCount || 4;
     document.querySelectorAll('input[name="reminderWeekday"]').forEach(input => {
       input.checked = (t.reminderWeekdays || []).includes(Number(input.value));
@@ -1873,8 +2210,19 @@
     if (!editingReminderTodoId) return;
     const reminderEnabled = document.getElementById('reminderEnabledToggle').checked;
     const reminderMode = document.getElementById('reminderModeInput').value;
+    if (!commitReminderTimeInput()) {
+      document.getElementById('reminderTimeInput')?.focus();
+      return;
+    }
     const reminderTime = document.getElementById('reminderTimeInput').value;
-    const reminderWeekdays = [...document.querySelectorAll('input[name="reminderWeekday"]:checked')].map(input => Number(input.value));
+    const reminderWeekdays = getReminderWeekdays();
+    const weekdaysError = document.getElementById('reminderWeekdaysError');
+    if (['weekly', 'count'].includes(reminderMode) && reminderWeekdays.length === 0) {
+      if (weekdaysError) weekdaysError.textContent = '请选择至少一个发送日，也可以使用上方快捷选择。';
+      document.querySelector('input[name="reminderWeekday"]')?.focus();
+      return;
+    }
+    if (weekdaysError) weekdaysError.textContent = '';
     const reminderRepeatCount = Math.max(1, Number(document.getElementById('reminderRepeatCountInput').value) || 1);
     const creatorEmail = document.getElementById('creatorEmailInput').value.trim();
     const todoId = editingReminderTodoId;
