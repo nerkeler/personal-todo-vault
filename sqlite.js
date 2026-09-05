@@ -13,7 +13,7 @@ const MAX_BACKUPS = 10;
 let db = null;
 
 const PRESET_CATEGORIES = [
-  { id: 'cat_default',   name: '默认',   icon: '📋', sort_order: 0 },
+  { id: 'cat_default',   name: '默认',   icon: '📥', sort_order: 0 },
   { id: 'cat_touzi',     name: '投资',   icon: '💰', sort_order: 1 },
   { id: 'cat_dianshiju', name: '电视剧', icon: '🎬', sort_order: 2 },
   { id: 'cat_dianying',  name: '电影',   icon: '🎥', sort_order: 3 },
@@ -40,7 +40,7 @@ async function initDB() {
   db.run(`CREATE TABLE IF NOT EXISTS categories (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    icon TEXT DEFAULT '📋',
+    icon TEXT DEFAULT '📥',
     sort_order INTEGER DEFAULT 0
   )`);
 
