@@ -1,6 +1,6 @@
 # Personal Todo Vault
 
-> 把待办变成可追踪、可提醒、可复盘的个人工作台。
+> 个人任务、进度、邮件提醒与 Markdown 笔记的本地化管理服务。
 
 一个面向个人使用与私有部署的待办服务：任务、进度、提醒和 Markdown 笔记保存在自己的设备上，也可以通过坚果云 WebDAV 做加密配置下的云端备份。
 
@@ -14,23 +14,23 @@
 > [!WARNING]
 > 项目目前没有登录、权限管理或多用户隔离机制。请只部署在可信的本机、局域网、VPN 或已由反向代理提供身份验证的网络中，不要直接将端口暴露到公网。
 
-## 看一眼
+## 运行实例图
 
 <p align="center">
   <img src="docs/screenshots/dashboard.png" alt="主界面：分类、待办和进度" width="920">
 </p>
 
-<p align="center"><sub>分类、进度和待完成事项集中在一个轻量的个人工作台里。</sub></p>
+<p align="center"><sub>主界面集中展示分类、进度和待完成事项。</sub></p>
 
 <table>
   <tr>
     <td width="50%" align="center">
       <img src="docs/screenshots/reminder-time-picker.png" alt="提醒时间选择器" width="100%">
-      <br><sub>提醒时间：常用时段、分钟刻度、加减微调和直接输入</sub>
+      <br><sub>提醒时间选择：常用时段、分钟刻度、加减微调和直接输入</sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/screenshots/markdown-preview.png" alt="Markdown 笔记预览" width="100%">
-      <br><sub>Markdown 笔记：标题、清单、引用、表格和代码都能直观看到</sub>
+      <br><sub>Markdown 笔记预览：标题、清单、引用、表格和代码</sub>
     </td>
   </tr>
 </table>
@@ -39,19 +39,19 @@
   <img src="docs/screenshots/settings-center.png" alt="配置中心：邮件和坚果云设置" width="920">
 </p>
 
-<p align="center"><sub>配置中心统一管理 SMTP 邮件提醒和坚果云备份，密码默认不回显。</sub></p>
+<p align="center"><sub>配置中心：SMTP 邮件提醒、坚果云备份及本地加密配置。</sub></p>
 
-## 为什么值得用
+## 项目特点
 
-| 你想解决的问题 | Personal Todo Vault 的做法 |
+| 项目维度 | 实现方式 |
 |---|---|
-| 待办只有标题，缺少上下文 | 每条任务关联一份独立 Markdown 笔记 |
-| 长期事项容易失去进度感 | 记录 0–100% 进度，完成后自动收口 |
-| 重要任务总是忘记 | 单次、每周或按次数发送邮件提醒 |
-| 提醒时间很难配置 | 常用时间 + 5 分钟刻度 + 小时/分钟微调 |
-| 不想把个人数据交给第三方 | 本地 SQLite + 本地 Markdown，可选自托管备份 |
+| 任务上下文 | 每条任务关联一份独立 Markdown 笔记 |
+| 进度管理 | 记录 0–100% 进度，达到 100% 自动完成 |
+| 邮件提醒 | 支持单次、每周及按次数重复发送 |
+| 时间配置 | 常用时间、5 分钟刻度、小时/分钟微调和直接输入 |
+| 数据存储 | 本地 SQLite 与 Markdown，可选坚果云 WebDAV 备份 |
 
-## 一个任务的完整闭环
+## 任务处理流程
 
 ```mermaid
 flowchart LR
@@ -82,7 +82,7 @@ flowchart LR
 
 应用内可以在“预览 / 编辑”之间切换；标题、任务清单、引用、表格、代码和链接会按可读格式展示。提醒邮件也会把关联笔记解析成 HTML，而不是原样展示 Markdown 源码。
 
-### 设置一个不容易忘记的提醒
+### 提醒配置示例
 
 | 设置项 | 示例 |
 |---|---|
@@ -167,7 +167,7 @@ HOST=0.0.0.0 PORT=8238 npm start
 
 原生 HTML / CSS / JavaScript · Node.js 原生 HTTP · SQLite WASM (`sql.js`) · `nodemailer` · 坚果云 WebDAV
 
-## 最近更新
+## 近期更新
 
 - Markdown 笔记在提醒邮件中解析为可读 HTML，并保留纯文本版本。
 - 提醒时间选择器支持常用时间、5 分钟刻度、小时/分钟微调和输入校验。
