@@ -51,6 +51,7 @@ async function initDB() {
     category_id TEXT,
     progress INTEGER DEFAULT 0,
     created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
     reminder_enabled INTEGER DEFAULT 0,
     reminder_time TEXT DEFAULT '',
     reminder_mode TEXT DEFAULT 'once',
@@ -75,6 +76,7 @@ async function initDB() {
   const cols = db.exec(`PRAGMA table_info(todos)`);
   const colNames = (cols[0]?.values || []).map(r => r[1]);
   const migrations = [
+    ['updated_at', "ALTER TABLE todos ADD COLUMN updated_at TEXT DEFAULT ''"],
     ['note_file', "ALTER TABLE todos ADD COLUMN note_file TEXT DEFAULT ''"],
     ['reminder_mode', "ALTER TABLE todos ADD COLUMN reminder_mode TEXT DEFAULT 'once'"],
     ['reminder_weekdays', "ALTER TABLE todos ADD COLUMN reminder_weekdays TEXT DEFAULT '[]'"],
@@ -85,6 +87,12 @@ async function initDB() {
   for (const [name, sql] of migrations) {
     if (!colNames.includes(name)) db.run(sql);
   }
+
+  // 旧数据没有更新时间时，用创建时间作为初始值。
+  db.run("UPDATE todos SET updated_at=created_at WHERE updated_at IS NULL OR updated_at=''");
+
+  // 已完成任务不保留可发送的提醒状态，兼容升级前已经完成的任务。
+  db.run('UPDATE todos SET reminder_enabled=0 WHERE completed=1');
 
   // 初始化默认分类
   const existing = db.exec('SELECT COUNT(*) FROM categories')[0].values[0][0];
@@ -235,8 +243,9 @@ function getTodos(categoryId) {
     categoryId: r.category_id,
     progress: Number.isInteger(r.progress) ? r.progress : 0,
     createdAt: r.created_at || null,
+    updatedAt: r.updated_at || r.created_at || null,
     completed: !!r.completed,
-    reminderEnabled: !!r.reminder_enabled,
+    reminderEnabled: !r.completed && !!r.reminder_enabled,
     reminderTime: r.reminder_time || '',
     reminderMode: ['once', 'weekly', 'count'].includes(r.reminder_mode) ? r.reminder_mode : 'once',
     reminderWeekdays: parseReminderWeekdays(r.reminder_weekdays),
@@ -251,13 +260,13 @@ function getTodos(categoryId) {
 function createTodo(title, categoryId = 'cat_default') {
   const id = require('crypto').randomBytes(8).toString('hex') + require('crypto').randomBytes(4).toString('hex');
   const now = new Date().toISOString();
-  db.run(`INSERT INTO todos (id, title, completed, category_id, progress, created_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
-    VALUES (?, ?, 0, ?, 0, ?, 0, '', 'once', '[]', 1, 0, '', '', '')`, [id, title, categoryId, now]);
+  db.run(`INSERT INTO todos (id, title, completed, category_id, progress, created_at, updated_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
+    VALUES (?, ?, 0, ?, 0, ?, ?, 0, '', 'once', '[]', 1, 0, '', '', '')`, [id, title, categoryId, now, now]);
   saveDB();
   return getTodos().find(t => t.id === id);
 }
 
-function updateTodo(id, kwargs) {
+function updateTodo(id, kwargs, options = {}) {
   const fields = [];
   const values = [];
   // JS → DB 字段名映射
@@ -285,16 +294,54 @@ function updateTodo(id, kwargs) {
       values.push(val);
     }
   }
+  // 保持完成状态与进度一致：完成为100%，重新打开从0%开始。
+  if (kwargs.completed === true) {
+    const progressIndex = fields.indexOf('progress=?');
+    if (progressIndex === -1) {
+      fields.push('progress=?');
+      values.push(100);
+    } else {
+      values[progressIndex] = 100;
+    }
+  } else if (kwargs.completed === false && (kwargs.progress === undefined || kwargs.progress === 100)) {
+    const progressIndex = fields.indexOf('progress=?');
+    if (progressIndex === -1) {
+      fields.push('progress=?');
+      values.push(0);
+    } else {
+      values[progressIndex] = 0;
+    }
+  }
   // 进度100%自动标记完成
   if (kwargs.progress === 100 && kwargs.completed === undefined) {
     fields.push('completed=?');
     values.push(1);
+  }
+  // 完成状态与提醒状态强绑定：完成任务后不再保留提醒开关。
+  if (kwargs.completed === true || (kwargs.progress === 100 && kwargs.completed === undefined)) {
+    const reminderIndex = fields.indexOf('reminder_enabled=?');
+    if (reminderIndex === -1) {
+      fields.push('reminder_enabled=?');
+      values.push(0);
+    } else {
+      values[reminderIndex] = 0;
+    }
+  }
+  if (options.touchUpdatedAt !== false) {
+    fields.push('updated_at=?');
+    values.push(new Date().toISOString());
   }
   if (fields.length === 0) return getTodos().find(t => t.id === id);
   values.push(id);
   db.run(`UPDATE todos SET ${fields.join(',')} WHERE id=?`, values);
   saveDB();
   return getTodos().find(t => t.id === id);
+}
+
+function touchTodoUpdatedAt(id) {
+  db.run('UPDATE todos SET updated_at=? WHERE id=?', [new Date().toISOString(), id]);
+  saveDB();
+  return getTodos().find(t => t.id === id) || null;
 }
 
 function deleteTodo(id) {
@@ -338,7 +385,7 @@ function migrateFromJSON(jsonFile, persist = true) {
   // 迁移任务
   for (const todo of (data.todos || [])) {
     try {
-      const reminderEnabled = todo.reminderEnabled ?? todo.reminder_enabled ?? false;
+      const reminderEnabled = !todo.completed && (todo.reminderEnabled ?? todo.reminder_enabled ?? false);
       const reminderTime = todo.reminderTime ?? todo.reminder_time ?? '';
       const reminderMode = ['once', 'weekly', 'count'].includes(todo.reminderMode) ? todo.reminderMode : 'once';
       const reminderWeekdays = JSON.stringify(parseReminderWeekdays(todo.reminderWeekdays ?? todo.reminder_weekdays));
@@ -347,12 +394,14 @@ function migrateFromJSON(jsonFile, persist = true) {
       const reminderLastSentAt = todo.reminderLastSentAt ?? todo.reminder_last_sent_at ?? '';
       const creatorEmail = todo.creatorEmail ?? todo.creator_email ?? '';
       const noteFile = todo.noteFile ?? todo.note_file ?? '';
+      const createdAt = todo.createdAt ?? todo.created_at ?? '';
+      const updatedAt = todo.updatedAt ?? todo.updated_at ?? createdAt;
       db.run(`INSERT OR IGNORE INTO todos
-        (id, title, completed, category_id, progress, created_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, title, completed, category_id, progress, created_at, updated_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [todo.id, todo.title, todo.completed ? 1 : 0,
          todo.categoryId || 'cat_default', todo.progress || 0,
-         todo.createdAt || '', reminderEnabled ? 1 : 0,
+         createdAt, updatedAt, reminderEnabled ? 1 : 0,
          reminderTime, reminderMode, reminderWeekdays, reminderRepeatCount, reminderSentCount,
          reminderLastSentAt, creatorEmail, noteFile]);
     } catch (e) { /* ignore dup */ }
@@ -364,6 +413,6 @@ function migrateFromJSON(jsonFile, persist = true) {
 
 module.exports = { initDB, closeDB, saveDB,
   getCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
-  getTodos, createTodo, updateTodo, deleteTodo,
+  getTodos, createTodo, updateTodo, touchTodoUpdatedAt, deleteTodo,
   getSettings, saveSettings, migrateFromJSON,
 };

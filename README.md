@@ -47,7 +47,7 @@
 - npm
 
 ```bash
-git clone https://github.com/nerkeler/personal-todo-vault.git
+git clone https://github.com/YOUR_GITHUB_ACCOUNT/personal-todo-vault.git
 cd personal-todo-vault
 npm ci
 npm start
@@ -105,7 +105,7 @@ HOST=0.0.0.0 PORT=8238 npm start
    ```bash
    sudo mkdir -p /opt/personal-todo-vault
    sudo chown "$USER":"$USER" /opt/personal-todo-vault
-   git clone https://github.com/nerkeler/personal-todo-vault.git /opt/personal-todo-vault
+   git clone https://github.com/YOUR_GITHUB_ACCOUNT/personal-todo-vault.git /opt/personal-todo-vault
    cd /opt/personal-todo-vault
    npm ci
    ```
