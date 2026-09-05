@@ -29,7 +29,7 @@ if (fs.existsSync('/etc/environment')) {
 // ── 加载模块 ─────────────────────────────────────────────
 const { initDB, closeDB, saveDB,
   getCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
-  getTodos, createTodo, updateTodo, deleteTodo,
+  getTodos, createTodo, updateTodo, touchTodoUpdatedAt, deleteTodo,
   getSettings, saveSettings, migrateFromJSON } = require('./sqlite.js');
 const { sendEmail, sendTestEmail } = require('./email.js');
 const { getFullConfig, saveAppConfig, publicAppConfig, isEmailConfigured, migrateStoredConfigSecrets } = require('./appConfig.js');
@@ -38,6 +38,7 @@ const { getBackupConfig, publicBackupStatus, testBackupConfig, uploadBackup } = 
 // ── MIME 类型 ────────────────────────────────────────────
 const MIME = {
   '.html': 'text/html; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
@@ -125,7 +126,7 @@ function ensureNoteFile(todo) {
     } else {
       writeTextAtomic(filepath, `# ${todo.title}\n`);
     }
-    updateTodo(todo.id, { noteFile });
+    updateTodo(todo.id, { noteFile }, { touchUpdatedAt: false });
   }
   return { noteFile, filepath };
 }
@@ -805,7 +806,8 @@ const server = http.createServer(async (req, res) => {
           const { noteFile, filepath } = ensureNoteFile(currentTodo || todo);
           writeTextAtomic(filepath, content);
           if ((currentTodo || todo).noteFile !== noteFile) updateTodo(id, { noteFile });
-          jsonResR({ id, noteFile, success: true });
+          const updated = touchTodoUpdatedAt(id);
+          jsonResR({ ...(updated || {}), id, noteFile, success: true });
         } catch (e) { jsonResR({ error: e.message }, 500); }
       }, MAX_NOTE_BODY_BYTES);
       return;

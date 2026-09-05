@@ -1,8 +1,20 @@
+# Dependencies and build/runtime logs
 node_modules/
 nodemailer.tgz
-package-lock.json
 *.log
 .DS_Store
+
+# Runtime data and local recovery copies — never commit personal content
 backups/
+todo.db
+data.json
+notes/*
+!notes/.gitkeep
+
+# Encrypted local configuration and its machine-local encryption key
 config.local.json
 config.local.key
+
+# Optional developer environment overrides
+.env
+.env.local

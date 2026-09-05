@@ -246,7 +246,7 @@
     .main {
       flex: 1;
       margin-left: var(--sidebar-w);
-      padding: 28px 32px 80px;
+      padding: 28px 32px 30px;
       max-width: 880px;
     }
 
@@ -278,6 +278,24 @@
     }
 
     .header-right { display: flex; align-items: center; gap: 10px; }
+
+    .header-help {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      background: var(--surface);
+      color: var(--text-2);
+      font: inherit;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .header-help:hover { border-color: var(--primary); color: var(--primary); }
 
     .theme-toggle {
       width: 36px; height: 36px;
@@ -427,6 +445,38 @@
 
     /* Todo item */
     .todo-list { display: flex; flex-direction: column; gap: 8px; }
+    .completed-pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 34px 0 4px;
+      color: var(--text-3);
+      font-size: 0.78rem;
+    }
+    .completed-pagination[hidden] { display: none; }
+    .completed-pagination-controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      flex-wrap: wrap;
+      width: fit-content;
+      max-width: 100%;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+    }
+    .pagination-btn {
+      min-width: 30px; height: 30px; padding: 0 8px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text-2);
+      font: inherit; cursor: pointer; transition: all var(--transition);
+    }
+    .pagination-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+    .pagination-btn.active { border-color: var(--primary); background: var(--primary); color: #fff; font-weight: 700; }
+    .pagination-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .pagination-ellipsis { padding: 0 3px; color: var(--text-3); }
 
     .todo-item {
       background: var(--surface);
@@ -575,7 +625,17 @@
     .todo-date {
       font-size: 0.72rem;
       color: var(--text-3);
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-variant-numeric: tabular-nums;
     }
+    .todo-date::before { font-size: 0.78rem; line-height: 1; }
+    .todo-date-created::before { content: '✦'; color: var(--text-3); }
+    .todo-date-updated { color: var(--text-2); }
+    .todo-date-updated::before { content: '↻'; color: var(--accent); }
+    .todo-date-divider { color: var(--border); font-size: 0.72rem; line-height: 1; user-select: none; }
     .today-badge {
       font-size: 0.68rem;
       color: #fff;
@@ -673,7 +733,7 @@
     /* Footer */
     .footer {
       text-align: center;
-      margin-top: 48px;
+      margin-top: 12px;
       font-size: 0.75rem;
       color: var(--text-3);
     }
@@ -1144,20 +1204,84 @@
 
 
     /* ── Note Modal ── */
-    .note-modal { max-width: 780px; width: 90vw; display: flex; flex-direction: column; max-height: 85vh; }
-    .note-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .note-modal {
+      width: min(880px, calc(100vw - 32px));
+      max-width: 880px;
+      height: min(900px, calc(100vh - 32px));
+      max-height: calc(100vh - 32px);
+      padding: 28px 32px 24px;
+      display: flex;
+      flex-direction: column;
+    }
+    .note-modal > .modal-title {
+      width: min(794px, 100%);
+      margin: 0 auto 12px;
+    }
+    .note-modal > .modal-actions {
+      width: min(794px, 100%);
+      margin: 14px auto 0;
+    }
+    .note-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: min(794px, 100%);
+      margin: 0 auto 8px;
+    }
     .note-tabs { display: flex; gap: 4px; background: var(--bg); border-radius: 8px; padding: 3px; }
     .note-tab { border: none; background: transparent; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; color: var(--text-2); font-weight: 500; transition: all 0.15s; }
     .note-tab.active { background: var(--surface); color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.12); font-weight: 600; }
     .note-save-status { font-size: 0.75rem; color: var(--text-3); }
-    .note-body { flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 280px; scrollbar-width: thin; }
-    .note-editor { display: none; width: 100%; resize: none; padding: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9rem; line-height: 1.7; background: var(--bg); color: var(--text); outline: none; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    .note-body { flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 0; scrollbar-width: thin; }
+    .note-editor {
+      display: none;
+      width: min(794px, 100%);
+      max-width: 100%;
+      min-height: 0;
+      margin: 0 auto;
+      box-sizing: border-box;
+      resize: none;
+      padding: 32px 56px 48px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95rem;
+      line-height: 1.75;
+      background: var(--surface);
+      color: var(--text);
+      outline: none;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+    }
     /* data-mode is set on the modal overlay (#noteModal), not the inner panel. */
     #noteModal[data-mode="preview"] .note-preview-wrap { display: block; }
     #noteModal[data-mode="preview"] .note-editor { display: none; }
     #noteModal[data-mode="editor"] .note-preview-wrap { display: none; }
     #noteModal[data-mode="editor"] .note-editor { display: block; }
-    .note-body.note-preview-wrap { padding: 20px 24px; font-size: 0.95rem; line-height: 1.75; color: var(--text); overflow-wrap: break-word; }
+    .note-body.note-preview-wrap {
+      width: min(794px, 100%);
+      margin: 0 auto;
+      padding: 0;
+      font-size: 0.95rem;
+      line-height: 1.75;
+      color: var(--text);
+      background: var(--surface);
+      border: 0;
+      overflow-wrap: break-word;
+    }
+    .note-document-page > :first-child { margin-top: 0; }
+    .note-document-page {
+      box-sizing: border-box;
+      width: min(794px, 100%);
+      min-height: 100%;
+      margin: 0 auto;
+      padding: 32px 56px 48px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      overflow-wrap: break-word;
+    }
+    .help-modal .note-preview-wrap { overflow-y: auto; }
 
     /* Markdown preview typography */
     .note-preview-wrap h1, .note-preview-wrap h2, .note-preview-wrap h3, .note-preview-wrap h4 { margin: 1.1em 0 0.5em; line-height: 1.35; font-weight: 700; }
@@ -1182,6 +1306,10 @@
 
     /* ── Responsive ── */
     @media (max-width: 768px) {
+      .todo-item { position: relative; }
+      .todo-actions { position: absolute; top: 13px; right: 14px; }
+      .todo-meta { gap: 4px; }
+      .todo-date { font-size: 0.7rem; gap: 3px; }
       .sidebar {
         transform: translateX(-100%);
         width: min(260px, 75vw);
@@ -1189,14 +1317,26 @@
       .sidebar-resizer { display: none; }
       .sidebar.open { transform: translateX(0); }
       .sidebar-close { display: flex; align-items: center; justify-content: center; }
-      .main { margin-left: 0; padding: 20px 16px 80px; }
+      .main { margin-left: 0; padding: 20px 16px 10px; }
       .menu-btn { display: flex; align-items: center; justify-content: center; }
       .current-cat-title { font-size: 1.25rem; }
       .add-row { flex-wrap: wrap; }
       .add-input { min-width: 0; }
       .cat-picker-btn { width: 100%; }
       .cat-picker-list { position: fixed; top: auto; bottom: 0; left: 0; right: 0; border-radius: 12px 12px 0 0; max-height: 50vh; z-index: 100; isolation: isolate; }
-      .cat-name { max-width: 120px; }
+      .cat-name { max-width: none; }
+      .cat-item .cat-count { margin-left: auto; }
+      .note-modal {
+        width: calc(100vw - 16px);
+        height: calc(100vh - 16px);
+        max-height: calc(100vh - 16px);
+        padding: 20px 16px 16px;
+      }
+      .note-body.note-preview-wrap { padding: 0; }
+      .note-document-page { width: 100%; min-height: 100%; padding: 32px 22px; }
+      .note-editor { width: 100%; min-height: 0; padding: 32px 22px; }
+      .completed-pagination { width: 100%; }
+      .completed-pagination-controls { width: fit-content; }
     }
 
     /* Scrollbar */
@@ -1231,6 +1371,9 @@
         <div class="current-cat-title" id="currentCatTitle">📋 全部</div>
       </div>
       <div class="header-right">
+        <button class="header-help" onclick="openHelpModal()" title="使用说明" aria-label="使用说明">
+          📘
+        </button>
         <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切换主题">🌙</button>
         <button class="theme-toggle" id="settingsBtn" onclick="openSettingsModal()" title="配置中心">⚙️</button>
       </div>
@@ -1273,9 +1416,10 @@
     <div id="doneSection" style="display:none">
       <div class="section-label">已完成</div>
       <section class="todo-list" id="doneList"></section>
+      <div class="completed-pagination" id="completedPagination" hidden aria-label="已完成任务分页"></div>
     </div>
 
-    <div class="footer">局域网多端同步 · 数据本地存储</div>
+    <div class="footer">Design by nerkeler</div>
   </main>
 </div>
 
@@ -1625,6 +1769,19 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="helpModal">
+  <div class="modal note-modal help-modal">
+    <div class="modal-title">
+      <span>📘 使用说明</span>
+      <button class="modal-close" onclick="closeHelpModal()" aria-label="关闭使用说明">✕</button>
+    </div>
+    <div class="note-body note-preview-wrap" id="helpPreview"></div>
+    <div class="modal-actions">
+      <button class="modal-btn primary" onclick="closeHelpModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const API = '/api';
   let categories = [];
@@ -1634,6 +1791,8 @@
   let editingTodoId = null;
   let editingProgressTodoId = null;
   let editingReminderTodoId = null;
+  const COMPLETED_PAGE_SIZE = 10;
+  let completedPage = 1;
   let settings = {
     email: { enabled: false, checkTime: '09:00', host: 'smtp.163.com', port: 465, secure: true, user: '', passwordConfigured: false, fromName: 'TODO提醒', from: '', recipients: '', configured: false },
     webdav: { provider: 'jianguoyun', baseUrl: 'https://dav.jianguoyun.com/dav/', username: '', passwordConfigured: false, backupDir: 'todo-app-backups', autoEnabled: false, intervalHours: 24, configured: false },
@@ -2366,6 +2525,7 @@
 
   function selectCat(catId) {
     activeCatId = catId;
+    completedPage = 1;
     const cat = catId ? categories.find(c => c.id === catId) : null;
     document.getElementById('currentCatTitle').innerHTML =
       cat ? `${escHtml(cat.icon)} ${escHtml(cat.name)}` : '📋 全部';
@@ -2458,6 +2618,10 @@
     const completed = filtered.filter(t => t.completed);
     const total = filtered.length;
     const done = completed.length;
+    const pageCount = Math.max(1, Math.ceil(done / COMPLETED_PAGE_SIZE));
+    completedPage = Math.min(Math.max(completedPage, 1), pageCount);
+    const pageStart = (completedPage - 1) * COMPLETED_PAGE_SIZE;
+    const visibleCompleted = completed.slice(pageStart, pageStart + COMPLETED_PAGE_SIZE);
 
     document.getElementById('doneCount').textContent = done;
     document.getElementById('totalCount').textContent = total;
@@ -2481,7 +2645,34 @@
     document.getElementById('pendingSection').style.display = total > 0 && pending.length > 0 ? 'block' : 'none';
     document.getElementById('doneSection').style.display = total > 0 && completed.length > 0 ? 'block' : 'none';
     document.getElementById('todoList').innerHTML = pending.map(makeTodoItem).join('');
-    document.getElementById('doneList').innerHTML = completed.map(makeTodoItem).join('');
+    document.getElementById('doneList').innerHTML = visibleCompleted.map(makeTodoItem).join('');
+    renderCompletedPagination(completedPage, pageCount);
+  }
+
+  function renderCompletedPagination(page, pageCount) {
+    const container = document.getElementById('completedPagination');
+    if (!container) return;
+    const pageNumbers = new Set([1, pageCount, page - 1, page, page + 1].filter(n => n >= 1 && n <= pageCount));
+    const orderedPages = [...pageNumbers].sort((a, b) => a - b);
+    const pageItems = [];
+    orderedPages.forEach((pageNumber, index) => {
+      if (index > 0 && pageNumber - orderedPages[index - 1] > 1) pageItems.push('<span class="pagination-ellipsis">…</span>');
+      pageItems.push(`<button class="pagination-btn${pageNumber === page ? ' active' : ''}" onclick="goToCompletedPage(${pageNumber})" aria-label="第 ${pageNumber} 页"${pageNumber === page ? ' aria-current="page"' : ''}>${pageNumber}</button>`);
+    });
+    container.hidden = false;
+    container.innerHTML = `
+      <div class="completed-pagination-controls">
+        <button class="pagination-btn" onclick="goToCompletedPage(${page - 1})" aria-label="上一页"${page === 1 ? ' disabled' : ''}>‹</button>
+        ${pageItems.join('')}
+        <button class="pagination-btn" onclick="goToCompletedPage(${page + 1})" aria-label="下一页"${page === pageCount ? ' disabled' : ''}>›</button>
+      </div>
+    `;
+  }
+
+  function goToCompletedPage(page) {
+    completedPage = Number(page) || 1;
+    render();
+    document.getElementById('doneSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function makeTodoItem(t) {
@@ -2490,6 +2681,7 @@
     const catIcon = escHtml(cat ? cat.icon : '📋');
     const catName = cat ? cat.name : '默认';
     const dateStr = formatDate(t.createdAt);
+    const updatedDateStr = formatDate(t.updatedAt || t.createdAt);
     const created = new Date(t.createdAt);
     const now = new Date();
     const todayMs = now.setHours(0,0,0,0);
@@ -2552,7 +2744,9 @@
           <div class="todo-meta">
             ${periodBadge}
             <span class="todo-cat-tag${t.completed ? ' readonly' : ''}" ${t.completed ? 'aria-disabled="true"' : `onclick="event.stopPropagation(); toggleMoveDropdown('${t.id}', event)"`}>${catIcon} ${escHtml(catName)} ▼</span>
-            <span class="todo-date">${dateStr}</span>
+            <span class="todo-date todo-date-created">${dateStr}</span>
+            <span class="todo-date-divider" aria-hidden="true">｜</span>
+            <span class="todo-date todo-date-updated">${updatedDateStr}</span>
           </div>
         </div>
         <div class="todo-actions">
@@ -2681,13 +2875,15 @@
     const todo = todos.find(t => t.id === todoId);
     if (!todo || todo.completed) return;
     try {
-      await fetch(`${API}/todos/${todoId}`, {
+      const res = await fetch(`${API}/todos/${todoId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ categoryId: catId })
       });
-      const t = todos.find(x => x.id === todoId);
-      if (t) t.categoryId = catId;
+      const updated = await res.json();
+      if (!res.ok) throw new Error(updated.error || '移动任务失败');
+      const index = todos.findIndex(x => x.id === todoId);
+      if (index !== -1) todos[index] = updated;
       renderCats();
       render();
     } catch (e) { console.error(e); }
@@ -2715,11 +2911,15 @@
     t.title = newTitle;
     editingTodoId = null;
     try {
-      await fetch(`${API}/todos/${id}`, {
+      const res = await fetch(`${API}/todos/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newTitle })
       });
+      const updated = await res.json();
+      if (!res.ok) throw new Error(updated.error || '保存任务失败');
+      const index = todos.findIndex(x => x.id === id);
+      if (index !== -1) todos[index] = updated;
       render();
     } catch (e) { console.error(e); }
   }
@@ -2908,6 +3108,7 @@
   /* ── Date format ── */
   function formatDate(iso) {
     const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '时间未知';
     const now = new Date();
     const isToday = d.toDateString() === now.toDateString();
     if (isToday) return `今天 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -2916,6 +3117,32 @@
     return `${d.getMonth()+1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
   function pad(n) { return n.toString().padStart(2, '0'); }
+
+  /* ── Help document ── */
+  let helpLoaded = false;
+
+  async function openHelpModal() {
+    const modal = document.getElementById('helpModal');
+    const preview = document.getElementById('helpPreview');
+    if (!modal || !preview) return;
+    modal.classList.add('show');
+    if (helpLoaded) return;
+    preview.innerHTML = '<article class="note-document-page"><p>正在加载使用说明…</p></article>';
+    try {
+      const res = await fetch('USAGE.md?_=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error(`加载失败（${res.status}）`);
+      const markdown = await res.text();
+      preview.innerHTML = `<article class="note-document-page">${renderMarkdown(markdown)}</article>`;
+      helpLoaded = true;
+    } catch (e) {
+      console.error(e);
+      preview.innerHTML = '<article class="note-document-page"><p>使用说明暂时无法加载，请稍后重试。</p></article>';
+    }
+  }
+
+  function closeHelpModal() {
+    document.getElementById('helpModal')?.classList.remove('show');
+  }
 
   /* ── Note modal ── */
   let noteTodoId = null;
@@ -2996,7 +3223,7 @@
 
   function renderNotePreview(content) {
     const html = renderMarkdown(content !== undefined ? content : document.getElementById('noteEditor').value);
-    document.getElementById('notePreview').innerHTML = html;
+    document.getElementById('notePreview').innerHTML = `<article class="note-document-page">${html}</article>`;
   }
 
   async function saveNote() {
@@ -3033,7 +3260,10 @@
       const st = document.getElementById('noteSaveStatus');
       st.textContent = '✅ 已保存';
       const t = todos.find(x => x.id === noteTodoId);
-      if (t) t.noteFile = data.noteFile;
+      if (t) {
+        t.noteFile = data.noteFile;
+        if (data.updatedAt) t.updatedAt = data.updatedAt;
+      }
       render();
       await sleep(1000);
       if (noteTodoId === savedTodoId) closeNoteModal();
@@ -3087,7 +3317,7 @@
     const flushTable = () => {
       if (tableRows.length < 3) { html += tableRows.join('<br>'); tableRows = []; return; }
       const rows = tableRows.map((r, i) => {
-        if (/^\|?\s*:?-+:?\s*\|?\s*$/.test(r.trim().replace(/\s+/g, ''))) return null;
+        if (/^\|?\s*:?-+\s*(\|\s*:?-+\s*)+\|?$/.test(r.trim())) return null;
         const cells = r.split('|').slice(1, -1);
         const tag = i === 0 ? 'th' : 'td';
         return `<tr>${cells.map(c => `<${tag}>${inlineMd(c.trim())}</${tag}>`).join('')}</tr>`;
