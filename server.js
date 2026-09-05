@@ -696,6 +696,16 @@ const server = http.createServer(async (req, res) => {
         if (updates.completed !== undefined && typeof updates.completed !== 'boolean') {
           jsonResR({ error: 'completed 必须是布尔值' }, 400); return;
         }
+        const currentTodo = findTodo(id) || todo;
+        if (currentTodo?.completed) {
+          const updateKeys = Object.keys(updates);
+          const isReopening = updates.completed === false && updateKeys.every(key =>
+            key === 'completed' || (key === 'progress' && updates.progress === 0));
+          const isCompletedNoop = updates.completed === true && updateKeys.every(key => key === 'completed');
+          if (!isReopening && !isCompletedNoop) {
+            jsonResR({ error: '任务已完成，请先重新打开任务后再编辑' }, 409); return;
+          }
+        }
         if (updates.categoryId !== undefined && !hasCategory(updates.categoryId)) {
           jsonResR({ error: 'Category not found' }, 400); return;
         }
@@ -738,10 +748,13 @@ const server = http.createServer(async (req, res) => {
           if (updates.reminderSentCount !== undefined) kw.reminderSentCount = Math.max(0, Number(updates.reminderSentCount) || 0);
           if (updates.reminderLastSentAt !== undefined) kw.reminderLastSentAt = cleanString(updates.reminderLastSentAt, 80);
           if (updates.creatorEmail !== undefined) kw.creatorEmail = updates.creatorEmail.trim();
-          const effectiveMode = kw.reminderMode || todo.reminderMode || 'once';
-          const effectiveWeekdays = kw.reminderWeekdays || todo.reminderWeekdays || [];
-          const effectiveEnabled = kw.reminderEnabled !== undefined ? kw.reminderEnabled : todo.reminderEnabled;
-          const effectiveTime = kw.reminderTime !== undefined ? kw.reminderTime : todo.reminderTime;
+          const effectiveMode = kw.reminderMode || currentTodo.reminderMode || 'once';
+          const effectiveWeekdays = kw.reminderWeekdays || currentTodo.reminderWeekdays || [];
+          const completing = updates.completed === true || (updates.completed === undefined && updates.progress === 100);
+          const effectiveEnabled = completing
+            ? false
+            : (kw.reminderEnabled !== undefined ? kw.reminderEnabled : currentTodo.reminderEnabled);
+          const effectiveTime = kw.reminderTime !== undefined ? kw.reminderTime : currentTodo.reminderTime;
           if (effectiveEnabled && !isValidTime(effectiveTime)) {
             jsonResR({ error: '启用提醒时必须设置有效的提醒时间' }, 400); return;
           }
@@ -749,7 +762,7 @@ const server = http.createServer(async (req, res) => {
             jsonResR({ error: '每周重复或重复次数提醒至少选择一个星期' }, 400); return;
           }
           // 重新开启提醒或更换提醒规则时，从第 1 次重新计数。
-          if ((kw.reminderEnabled === true && !todo.reminderEnabled) || updates.reminderMode !== undefined || updates.reminderWeekdays !== undefined || updates.reminderRepeatCount !== undefined) {
+          if ((kw.reminderEnabled === true && !currentTodo.reminderEnabled) || updates.reminderMode !== undefined || updates.reminderWeekdays !== undefined || updates.reminderRepeatCount !== undefined) {
             kw.reminderSentCount = 0;
             kw.reminderLastSentAt = '';
           }
@@ -784,10 +797,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'PUT') {
       withBody(async ({ content }) => {
         if (typeof content !== 'string') { jsonResR({ error: 'content 必须是字符串' }, 400); return; }
+        const currentTodo = findTodo(id);
+        if (currentTodo?.completed) {
+          jsonResR({ error: '任务已完成，Markdown 仅可查看' }, 409); return;
+        }
         try {
-          const { noteFile, filepath } = ensureNoteFile(todo);
+          const { noteFile, filepath } = ensureNoteFile(currentTodo || todo);
           writeTextAtomic(filepath, content);
-          if (todo.noteFile !== noteFile) updateTodo(id, { noteFile });
+          if ((currentTodo || todo).noteFile !== noteFile) updateTodo(id, { noteFile });
           jsonResR({ id, noteFile, success: true });
         } catch (e) { jsonResR({ error: e.message }, 500); }
       }, MAX_NOTE_BODY_BYTES);

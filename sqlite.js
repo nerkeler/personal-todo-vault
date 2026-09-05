@@ -86,6 +86,9 @@ async function initDB() {
     if (!colNames.includes(name)) db.run(sql);
   }
 
+  // 已完成任务不保留可发送的提醒状态，兼容升级前已经完成的任务。
+  db.run('UPDATE todos SET reminder_enabled=0 WHERE completed=1');
+
   // 初始化默认分类
   const existing = db.exec('SELECT COUNT(*) FROM categories')[0].values[0][0];
   if (existing === 0) {
@@ -236,7 +239,7 @@ function getTodos(categoryId) {
     progress: Number.isInteger(r.progress) ? r.progress : 0,
     createdAt: r.created_at || null,
     completed: !!r.completed,
-    reminderEnabled: !!r.reminder_enabled,
+    reminderEnabled: !r.completed && !!r.reminder_enabled,
     reminderTime: r.reminder_time || '',
     reminderMode: ['once', 'weekly', 'count'].includes(r.reminder_mode) ? r.reminder_mode : 'once',
     reminderWeekdays: parseReminderWeekdays(r.reminder_weekdays),
@@ -285,10 +288,38 @@ function updateTodo(id, kwargs) {
       values.push(val);
     }
   }
+  // 保持完成状态与进度一致：完成为100%，重新打开从0%开始。
+  if (kwargs.completed === true) {
+    const progressIndex = fields.indexOf('progress=?');
+    if (progressIndex === -1) {
+      fields.push('progress=?');
+      values.push(100);
+    } else {
+      values[progressIndex] = 100;
+    }
+  } else if (kwargs.completed === false && (kwargs.progress === undefined || kwargs.progress === 100)) {
+    const progressIndex = fields.indexOf('progress=?');
+    if (progressIndex === -1) {
+      fields.push('progress=?');
+      values.push(0);
+    } else {
+      values[progressIndex] = 0;
+    }
+  }
   // 进度100%自动标记完成
   if (kwargs.progress === 100 && kwargs.completed === undefined) {
     fields.push('completed=?');
     values.push(1);
+  }
+  // 完成状态与提醒状态强绑定：完成任务后不再保留提醒开关。
+  if (kwargs.completed === true || (kwargs.progress === 100 && kwargs.completed === undefined)) {
+    const reminderIndex = fields.indexOf('reminder_enabled=?');
+    if (reminderIndex === -1) {
+      fields.push('reminder_enabled=?');
+      values.push(0);
+    } else {
+      values[reminderIndex] = 0;
+    }
   }
   if (fields.length === 0) return getTodos().find(t => t.id === id);
   values.push(id);

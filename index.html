@@ -498,6 +498,7 @@
       text-decoration: line-through;
       color: var(--text-3);
     }
+    .todo-text.readonly { cursor: default; }
 
     .modal-btn.cancel { background: var(--surface-hover); color: var(--text-2); }
     .modal-btn.cancel:hover { background: var(--border); }
@@ -566,6 +567,8 @@
       font-family: inherit;
     }
     .todo-cat-tag:hover { background: var(--primary); color: #fff; }
+    .todo-cat-tag.readonly { cursor: default; }
+    .todo-cat-tag.readonly:hover { background: var(--primary-light); color: var(--primary); }
 
     .todo-meta { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 
@@ -2180,9 +2183,9 @@
   }
 
   function openReminderModal(todoId) {
-    editingReminderTodoId = todoId;
     const t = todos.find(t => t.id === todoId);
-    if (!t) return;
+    if (!t || t.completed) return;
+    editingReminderTodoId = todoId;
     const cat = categories.find(category => category.id === t.categoryId);
     const taskMeta = document.getElementById('reminderTaskMeta');
     const taskProgress = document.getElementById('reminderTaskProgress');
@@ -2208,6 +2211,11 @@
   }
   async function saveReminderSettings() {
     if (!editingReminderTodoId) return;
+    const currentTodo = todos.find(t => t.id === editingReminderTodoId);
+    if (!currentTodo || currentTodo.completed) {
+      closeReminderModal();
+      return;
+    }
     const reminderEnabled = document.getElementById('reminderEnabledToggle').checked;
     const reminderMode = document.getElementById('reminderModeInput').value;
     if (!commitReminderTimeInput()) {
@@ -2521,7 +2529,7 @@
       <div class="todo-item${t.completed ? ' completed' : ''}" data-id="${t.id}">
         <div class="checkbox${t.completed ? ' checked' : ''}" onclick="toggleTodo('${t.id}')"></div>
         <div class="todo-body">
-          <div class="todo-text" onclick="startEditTodo('${t.id}')">${escHtml(t.title)}</div>
+          <div class="todo-text${t.completed ? ' readonly' : ''}" ${t.completed ? 'aria-readonly="true"' : `onclick="startEditTodo('${t.id}')"`}>${escHtml(t.title)}</div>
           ${t.completed ? `
           <div class="todo-progress-row" style="cursor:default;opacity:0.7">
             <div class="todo-progress-track">
@@ -2543,14 +2551,14 @@
           `}
           <div class="todo-meta">
             ${periodBadge}
-            <span class="todo-cat-tag" onclick="event.stopPropagation(); toggleMoveDropdown('${t.id}', event)">${catIcon} ${escHtml(catName)} ▼</span>
+            <span class="todo-cat-tag${t.completed ? ' readonly' : ''}" ${t.completed ? 'aria-disabled="true"' : `onclick="event.stopPropagation(); toggleMoveDropdown('${t.id}', event)"`}>${catIcon} ${escHtml(catName)} ▼</span>
             <span class="todo-date">${dateStr}</span>
           </div>
         </div>
         <div class="todo-actions">
           ${!t.completed ? `<button class="todo-act-btn reminder-action${t.reminderEnabled ? ' active' : ''}" onclick="openReminderModal('${t.id}')" title="${t.reminderEnabled ? '提醒已开启' : '提醒已关闭'}">${t.reminderEnabled ? '🔔' : '🔕'}</button>` : ''}
-          <button class="todo-act-btn${t.noteFile ? ' has-note' : ''}" onclick="openNoteModal('${t.id}')" title="笔记">📄</button>
-          <button class="todo-act-btn" onclick="startEditTodo('${t.id}')" title="编辑">✎</button>
+          <button class="todo-act-btn${t.noteFile ? ' has-note' : ''}" onclick="openNoteModal('${t.id}')" title="${t.completed ? '查看笔记（只读）' : '笔记'}">📄</button>
+          ${!t.completed ? `<button class="todo-act-btn" onclick="startEditTodo('${t.id}')" title="编辑">✎</button>` : ''}
           <button class="todo-act-btn del" onclick="deleteTodo('${t.id}')" title="删除">✕</button>
         </div>
       </div>
@@ -2563,6 +2571,11 @@
     if (event) event.stopPropagation();
     const portal = document.getElementById('move-dropdown-portal');
     if (!portal) return;
+    const moveTodoItem = todos.find(x => x.id === todoId);
+    if (!moveTodoItem || moveTodoItem.completed) {
+      closeMoveDropdown();
+      return;
+    }
 
     // If clicking the same item, close
     if (openMoveTodoId === todoId && portal.style.display !== 'none') {
@@ -2573,7 +2586,7 @@
     openMoveTodoId = todoId;
 
     // Build options HTML
-    const t = todos.find(x => x.id === todoId);
+    const t = moveTodoItem;
     const optsHtml = categories.filter(c => c.id !== t.categoryId).map(c => `
       <div class="move-option" onclick="moveTodo('${todoId}', '${c.id}'); closeMoveDropdown();">
         ${escHtml(c.icon)} ${escHtml(c.name)}
@@ -2636,13 +2649,17 @@
   async function toggleTodo(id) {
     const t = todos.find(x => x.id === id);
     if (!t) return;
-    t.completed = !t.completed;
+    const completed = !t.completed;
     try {
-      await fetch(`${API}/todos/${id}`, {
+      const res = await fetch(`${API}/todos/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completed: t.completed })
+        body: JSON.stringify({ completed, progress: completed ? 100 : 0 })
       });
+      const updated = await res.json();
+      if (!res.ok) throw new Error(updated.error || '更新任务状态失败');
+      const index = todos.findIndex(x => x.id === id);
+      if (index !== -1) todos[index] = updated;
       renderCats();
       render();
     } catch (e) { console.error(e); }
@@ -2661,6 +2678,8 @@
   }
 
   async function moveTodo(todoId, catId) {
+    const todo = todos.find(t => t.id === todoId);
+    if (!todo || todo.completed) return;
     try {
       await fetch(`${API}/todos/${todoId}`, {
         method: 'PATCH',
@@ -2675,6 +2694,7 @@
   }
 
   function startEditTodo(id) {
+    if (todos.find(t => t.id === id)?.completed) return;
     editingTodoId = id;
     render();
     const inp = document.getElementById(`edit-todo-${id}`);
@@ -2687,7 +2707,11 @@
     const newTitle = inp.value.trim();
     if (!newTitle) { inp.classList.add('shake'); setTimeout(() => inp.classList.remove('shake'), 350); return; }
     const t = todos.find(x => x.id === id);
-    if (!t) return;
+    if (!t || t.completed) {
+      editingTodoId = null;
+      render();
+      return;
+    }
     t.title = newTitle;
     editingTodoId = null;
     try {
@@ -2739,13 +2763,17 @@
     const t = todos.find(x => x.id === id)
     if (t?.completed) return
     try {
-      await fetch(`${API}/todos/${id}`, {
+      const res = await fetch(`${API}/todos/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ progress: val })
       })
-      const t = todos.find(x => x.id === id)
-      if (t) { t.progress = val; render(); }
+      const updated = await res.json()
+      if (!res.ok) throw new Error(updated.error || '保存进度失败')
+      const index = todos.findIndex(x => x.id === id)
+      if (index !== -1) todos[index] = updated
+      renderCats()
+      render()
     } catch (e) { console.error(e) }
   }
 
@@ -2893,12 +2921,30 @@
   let noteTodoId = null;
   let noteMode = 'preview';
 
+  function setNoteReadOnlyState(readOnly) {
+    const modal = document.getElementById('noteModal');
+    const editTab = document.getElementById('noteTabEdit');
+    const saveButton = modal?.querySelector('.modal-btn.primary');
+    const editor = document.getElementById('noteEditor');
+    if (modal) modal.dataset.readonly = readOnly ? 'true' : 'false';
+    if (editTab) {
+      editTab.hidden = readOnly;
+      editTab.disabled = readOnly;
+    }
+    if (saveButton) {
+      saveButton.hidden = readOnly;
+      saveButton.disabled = readOnly;
+    }
+    if (editor) editor.readOnly = readOnly;
+  }
+
   async function openNoteModal(todoId) {
     noteTodoId = todoId;
     const t = todos.find(x => x.id === todoId);
     const title = t ? t.title : '笔记';
     document.getElementById('noteModalTitle').textContent = `📄 ${title}`;
-    document.getElementById('noteSaveStatus').textContent = '';
+    setNoteReadOnlyState(!!t?.completed);
+    document.getElementById('noteSaveStatus').textContent = t?.completed ? '任务已完成 · 仅供查看' : '';
     setNoteMode('preview');
     document.getElementById('noteModal').classList.add('show');
     await loadNote(todoId);
@@ -2907,6 +2953,7 @@
   function closeNoteModal() {
     document.getElementById('noteModal').classList.remove('show');
     noteTodoId = null;
+    setNoteReadOnlyState(false);
   }
 
   async function loadNote(todoId) {
@@ -2917,6 +2964,9 @@
       document.getElementById('noteEditor').value = data.content || '';
       renderNotePreview(data.content || '');
       const t = todos.find(x => x.id === todoId);
+      setNoteReadOnlyState(!!t?.completed);
+      if (t?.completed && noteMode === 'edit') setNoteMode('preview');
+      if (t?.completed) document.getElementById('noteSaveStatus').textContent = '任务已完成 · 仅供查看';
       document.getElementById('noteModalTitle').textContent = `📄 ${t ? t.title : '笔记'}`;
     } catch (e) {
       console.error(e);
@@ -2925,6 +2975,12 @@
   }
 
   function setNoteMode(mode) {
+    const noteTodo = todos.find(x => x.id === noteTodoId);
+    if (mode === 'edit' && noteTodo?.completed) {
+      setNoteReadOnlyState(true);
+      document.getElementById('noteSaveStatus').textContent = '任务已完成 · 仅供查看';
+      mode = 'preview';
+    }
     noteMode = mode;
     const modal = document.getElementById('noteModal');
     modal.dataset.mode = mode === 'edit' ? 'editor' : 'preview';
@@ -2933,6 +2989,8 @@
     if (mode === 'edit') {
       const ed = document.getElementById('noteEditor');
       ed.focus();
+    } else {
+      renderNotePreview(document.getElementById('noteEditor').value);
     }
   }
 
@@ -2943,7 +3001,17 @@
 
   async function saveNote() {
     if (!noteTodoId) return;
+    const todo = todos.find(x => x.id === noteTodoId);
+    if (!todo || todo.completed) {
+      setNoteReadOnlyState(true);
+      setNoteMode('preview');
+      document.getElementById('noteSaveStatus').textContent = '任务已完成 · 仅供查看';
+      return;
+    }
     const content = document.getElementById('noteEditor').value;
+    const savedTodoId = noteTodoId;
+    const saveButton = document.querySelector('#noteModal .modal-btn.primary');
+    if (saveButton) saveButton.disabled = true;
     document.getElementById('noteSaveStatus').textContent = '保存中…';
     try {
       const res = await fetch(`${API}/todos/${noteTodoId}/note`, {
@@ -2952,17 +3020,27 @@
         body: JSON.stringify({ content })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `保存失败（${res.status}）`);
+      if (!res.ok) {
+        if (res.status === 409) {
+          setNoteReadOnlyState(true);
+          setNoteMode('preview');
+          document.getElementById('noteSaveStatus').textContent = '任务已完成 · 仅供查看';
+          return;
+        }
+        throw new Error(data.error || `保存失败（${res.status}）`);
+      }
       renderNotePreview(content);
       const st = document.getElementById('noteSaveStatus');
       st.textContent = '✅ 已保存';
-      setTimeout(() => { st.textContent = ''; }, 2000);
       const t = todos.find(x => x.id === noteTodoId);
       if (t) t.noteFile = data.noteFile;
       render();
+      await sleep(1000);
+      if (noteTodoId === savedTodoId) closeNoteModal();
     } catch (e) {
       console.error(e);
       document.getElementById('noteSaveStatus').textContent = '❌ 保存失败';
+      if (saveButton) saveButton.disabled = false;
     }
   }
 
@@ -3022,20 +3100,17 @@
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
+      const isTableRow = trimmed.startsWith('|') && trimmed.endsWith('|');
+      if (tableRows.length && !isTableRow) flushTable();
       if (trimmed.startsWith('```')) {
         if (inCode) { html += `<pre><code>${escMd(inCodeLines.join('\n'))}</code></pre>`; inCodeLines = []; inCode = false; }
         else { inCode = true; inCodeLines = []; }
         continue;
       }
       if (inCode) { inCodeLines.push(line); continue; }
-      flushTable();
       const h = trimmed.match(/^(#{1,6})\s+(.*)$/);
       if (h) { html += `<h${h[1].length}>${inlineMd(h[2])}</h${h[1].length}>`; continue; }
-      if (tableRows.length) {
-        if (trimmed.startsWith('|')) { tableRows.push(trimmed); continue; }
-        else { flushTable(); }
-      }
-      if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      if (isTableRow) {
         tableRows.push(trimmed);
         continue;
       }
