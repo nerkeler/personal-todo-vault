@@ -165,23 +165,236 @@ function readReminderNote(todo) {
   return '（暂无笔记内容）';
 }
 
-function buildReminderEmailBody(todo, mode) {
+function escapeEmailHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeEmailMarkdownUrl(value) {
+  const decoded = String(value || '').trim();
+  try {
+    const parsed = new URL(decoded);
+    if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) return null;
+    return escapeEmailHtml(decoded);
+  } catch (_) {
+    return null;
+  }
+}
+
+function inlineMarkdownToEmailHtml(value) {
+  let html = escapeEmailHtml(value);
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, href) => {
+    const safeHref = safeEmailMarkdownUrl(href);
+    return safeHref
+      ? `<a href="${safeHref}" style="color:#667eea;text-decoration:underline;" rel="noopener noreferrer">${label}</a>`
+      : label;
+  });
+  return html
+    .replace(/`([^`]+)`/g, '<code style="padding:2px 5px;background:#edf0f5;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/~~([^~]+)~~/g, '<del>$1</del>');
+}
+
+function markdownToEmailHtml(markdown) {
+  if (!markdown || !markdown.trim()) return '<p style="margin:0;color:#718096;">（笔记为空）</p>';
+  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  let html = '';
+  let inCode = false;
+  let codeLines = [];
+  let tableRows = [];
+
+  const parseTableRow = row => row.replace(/^\||\|$/g, '').split('|').map(cell => cell.trim());
+  const isTableDivider = row => /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?$/.test(row.trim());
+  const flushTable = () => {
+    if (!tableRows.length) return;
+    const rows = tableRows.filter(row => !isTableDivider(row));
+    if (rows.length < 2) {
+      html += rows.map(row => `<p style="margin:0 0 10px;">${inlineMarkdownToEmailHtml(row)}</p>`).join('');
+      tableRows = [];
+      return;
+    }
+    const [header, ...body] = rows.map(parseTableRow);
+    html += `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:14px 0;border-collapse:collapse;font-size:13px;"><thead><tr>${header.map(cell => `<th style="padding:8px 10px;border:1px solid #e2e8f0;background:#f8fafc;text-align:left;">${inlineMarkdownToEmailHtml(cell)}</th>`).join('')}</tr></thead><tbody>${body.map(row => `<tr>${row.map(cell => `<td style="padding:8px 10px;border:1px solid #e2e8f0;vertical-align:top;">${inlineMarkdownToEmailHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    tableRows = [];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      if (inCode) {
+        html += `<pre style="margin:14px 0;padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;overflow:auto;white-space:pre-wrap;word-break:break-word;"><code style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;">${escapeEmailHtml(codeLines.join('\n'))}</code></pre>`;
+        codeLines = [];
+        inCode = false;
+      } else {
+        flushTable();
+        inCode = true;
+        codeLines = [];
+      }
+      continue;
+    }
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      tableRows.push(trimmed);
+      continue;
+    }
+    flushTable();
+
+    const heading = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) {
+      const level = Math.min(heading[1].length, 4);
+      const size = level === 1 ? '20px' : level === 2 ? '17px' : level === 3 ? '15px' : '14px';
+      html += `<h${level} style="margin:18px 0 8px;color:#1a202c;font-size:${size};line-height:1.4;">${inlineMarkdownToEmailHtml(heading[2])}</h${level}>`;
+      continue;
+    }
+    if (/^[-*]\s+/.test(trimmed) && !/^[-*]\s+\[[ xX]\]/.test(trimmed)) {
+      const items = [];
+      while (i < lines.length) {
+        const item = lines[i].trim();
+        if (!/^[-*]\s+/.test(item)) break;
+        items.push(item.replace(/^[-*]\s+/, ''));
+        i++;
+      }
+      i--;
+      html += `<ul style="margin:10px 0;padding-left:22px;">${items.map(item => `<li style="margin:4px 0;">${inlineMarkdownToEmailHtml(item)}</li>`).join('')}</ul>`;
+      continue;
+    }
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const items = [];
+      while (i < lines.length) {
+        const item = lines[i].trim();
+        const match = item.match(/^\d+\.\s+(.*)$/);
+        if (!match) break;
+        items.push(match[1]);
+        i++;
+      }
+      i--;
+      html += `<ol style="margin:10px 0;padding-left:22px;">${items.map(item => `<li style="margin:4px 0;">${inlineMarkdownToEmailHtml(item)}</li>`).join('')}</ol>`;
+      continue;
+    }
+    if (/^- \[[ xX]\]\s*/.test(trimmed)) {
+      const items = [];
+      while (i < lines.length) {
+        const item = lines[i].trim();
+        const match = item.match(/^- \[([ xX])\]\s*(.*)$/);
+        if (!match) break;
+        const checked = match[1].toLowerCase() === 'x';
+        items.push(`<li style="margin:4px 0;list-style:none;"><span style="color:${checked ? '#38a169' : '#a0aec0'};font-size:16px;">${checked ? '☑' : '☐'}</span> ${inlineMarkdownToEmailHtml(match[2])}</li>`);
+        i++;
+      }
+      i--;
+      html += `<ul style="margin:10px 0;padding-left:0;">${items.join('')}</ul>`;
+      continue;
+    }
+    if (trimmed.startsWith('> ')) {
+      const quotes = [];
+      while (i < lines.length && lines[i].trim().startsWith('> ')) {
+        quotes.push(lines[i].trim().slice(2));
+        i++;
+      }
+      i--;
+      html += `<blockquote style="margin:12px 0;padding:8px 14px;background:#f8fafc;border-left:1px solid #667eea;color:#4a5568;">${quotes.map(quote => inlineMarkdownToEmailHtml(quote)).join('<br>')}</blockquote>`;
+      continue;
+    }
+    if (trimmed === '---' || trimmed === '***') {
+      html += '<hr style="margin:18px 0;border:0;border-top:1px solid #e2e8f0;">';
+      continue;
+    }
+    if (trimmed === '') continue;
+    html += `<p style="margin:0 0 10px;">${inlineMarkdownToEmailHtml(line)}</p>`;
+  }
+  if (inCode) html += `<pre style="margin:14px 0;padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;overflow:auto;white-space:pre-wrap;word-break:break-word;"><code style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;">${escapeEmailHtml(codeLines.join('\n'))}</code></pre>`;
+  flushTable();
+  return html || '<p style="margin:0;color:#718096;">（笔记为空）</p>';
+}
+
+function buildReminderEmail(todo, mode) {
   const progress = Number.isFinite(Number(todo.progress)) ? Math.max(0, Math.min(100, Number(todo.progress))) : 0;
+  const completion = todo.completed ? 100 : progress;
+  const title = todo.title || '未命名任务';
+  const reminderTime = todo.reminderTime || '未设置';
+  const rule = reminderRuleText(todo, mode);
   const note = readReminderNote(todo);
-  return [
-    '📋 TODO 任务提醒',
+  const text = [
+    '🔔 该处理这件事了',
+    title,
     '',
-    `任务：${todo.title}`,
-    `提醒时间：${todo.reminderTime || '未设置'}`,
-    `重复规则：${reminderRuleText(todo, mode)}`,
-    `当前进度：${todo.completed ? 100 : progress}%`,
+    '任务概览',
+    `提醒时间：${reminderTime}`,
+    `重复规则：${rule}`,
+    `完成进度：${completion}%`,
+    '当前状态：待完成',
     '',
-    '📝 Markdown 笔记',
-    '────────────────────',
+    '📝 关联笔记',
+    '────────────────────────',
     note,
     '',
-    '请及时处理。',
+    '建议：打开 TODO App，完成或更新这项任务。',
+    '此邮件由 TODO App 自动发送。',
   ].join('\n');
+
+  const safeTitle = escapeEmailHtml(title);
+  const safeReminderTime = escapeEmailHtml(reminderTime);
+  const safeRule = escapeEmailHtml(rule);
+  const noteHtml = markdownToEmailHtml(note);
+  const html = `
+    <div style="margin:0;background:#f6f7fb;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans SC',Arial,sans-serif;color:#1a202c;line-height:1.6;">
+      <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${safeTitle} · 待处理提醒</div>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:620px;margin:0 auto;border-collapse:separate;border-spacing:0;">
+        <tr>
+          <td style="background:#667eea;border-radius:16px 16px 0 0;padding:28px 32px;color:#fff;">
+            <div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.84;">TODO APP</div>
+            <div style="font-size:24px;font-weight:700;line-height:1.3;margin-top:8px;">🔔 该处理这件事了</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#fff;border:1px solid #e2e8f0;border-top:0;border-radius:0 0 16px 16px;padding:28px 32px;">
+            <div style="font-size:22px;font-weight:700;line-height:1.4;word-break:break-word;">${safeTitle}</div>
+            <div style="display:inline-block;margin-top:12px;padding:4px 10px;border-radius:999px;background:#fff3cd;color:#8a5a00;font-size:12px;font-weight:700;">待完成</div>
+
+            <div style="margin-top:24px;border-top:1px solid #edf0f5;border-bottom:1px solid #edf0f5;padding:18px 0;">
+              <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;">
+                <tr>
+                  <td style="width:50%;padding:0 16px 12px 0;vertical-align:top;">
+                    <div style="font-size:12px;color:#718096;">提醒时间</div>
+                    <div style="font-size:15px;font-weight:600;margin-top:2px;">${safeReminderTime}</div>
+                  </td>
+                  <td style="width:50%;padding:0 0 12px 16px;vertical-align:top;">
+                    <div style="font-size:12px;color:#718096;">重复规则</div>
+                    <div style="font-size:15px;font-weight:600;margin-top:2px;word-break:break-word;">${safeRule}</div>
+                  </td>
+                </tr>
+              </table>
+              <div style="font-size:12px;color:#718096;margin-top:4px;">完成进度 <strong style="color:#38a169;">${completion}%</strong></div>
+              <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-top:8px;border-collapse:collapse;background:#e2e8f0;border-radius:999px;overflow:hidden;">
+                <tr><td style="height:8px;background:#38ef7d;border-radius:999px;width:${completion}%;font-size:0;line-height:0;">&nbsp;</td><td style="font-size:0;line-height:0;">&nbsp;</td></tr>
+              </table>
+            </div>
+
+            <div style="margin-top:22px;padding:18px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
+              <div style="font-size:13px;font-weight:700;color:#4a5568;margin-bottom:8px;">📝 关联笔记</div>
+              <div style="font-size:14px;color:#4a5568;word-break:break-word;">${noteHtml}</div>
+            </div>
+
+            <div style="font-size:13px;color:#718096;margin-top:22px;">建议：打开 TODO App，完成或更新这项任务。</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 8px 0;text-align:center;font-size:12px;color:#a0aec0;">此邮件由 TODO App 自动发送</td>
+        </tr>
+      </table>
+    </div>
+  `;
+
+  return { text, html };
 }
 
 function removeTodoNote(todo) {
@@ -625,11 +838,12 @@ function startCron() {
         const recipient = todo.creatorEmail || emailConfig.recipients;
         if (!recipient) continue;
         try {
+          const reminderEmail = buildReminderEmail(todo, mode);
           await sendEmail(
             recipient,
             `📋 任务提醒：${todo.title}`,
-            buildReminderEmailBody(todo, mode),
-            { email: emailConfig }
+            reminderEmail.text,
+            { email: emailConfig, html: reminderEmail.html }
           );
           const sentCount = todo.reminderSentCount + 1;
           const finished = mode === 'once' || (mode === 'count' && sentCount >= todo.reminderRepeatCount);

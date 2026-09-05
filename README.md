@@ -1,15 +1,42 @@
 # Personal Todo Vault
 
+> 把待办变成可追踪、可提醒、可复盘的个人工作台。
+
 一个面向**个人使用与私有部署**的待办事项服务：待办、进度、提醒和 Markdown 笔记保存在你自己的设备上；可选地通过坚果云 WebDAV 做加密配置下的云端备份。项目使用原生 Node.js HTTP 服务与 SQLite（sql.js），不依赖前端框架或外部 SaaS。
+
+<p align="center">
+  <a href="https://github.com/nerkeler/personal-todo-vault"><img src="https://img.shields.io/github/stars/nerkeler/personal-todo-vault?style=flat-square&logo=github" alt="GitHub stars"></a>
+  <a href="https://github.com/nerkeler/personal-todo-vault/blob/main/LICENSE"><img src="https://img.shields.io/github/license/nerkeler/personal-todo-vault?style=flat-square" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 20 or newer">
+  <img src="https://img.shields.io/badge/SQLite-WASM-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite WASM">
+</p>
 
 > [!WARNING]
 > 本项目目前**没有登录、权限管理或多用户隔离机制**。请只部署在可信的本机、局域网、VPN 或已由反向代理提供身份验证的网络中；**不要直接将端口暴露到公网**。
+
+## 先看效果
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Personal Todo Vault 主界面示例" width="920">
+</p>
+
+<p align="center"><sub>待办、分类、进度和完成概览集中在一个清爽的个人工作台里。</sub></p>
+
+<p align="center">
+  <img src="docs/screenshots/reminder-time-picker.png" alt="Personal Todo Vault 提醒时间选择示例" width="720">
+</p>
+
+<p align="center"><sub>提醒支持常用时间、5 分钟刻度、小时/分钟微调，也可以直接输入时间。</sub></p>
+
+> 截图使用脱敏示例数据；实际待办、笔记、数据库和配置都留在你的运行环境中。
 
 ## 为什么它不同于一般待办应用？
 
 - **一条待办，一份 Markdown 上下文**：每个待办都有独立笔记，可记录目标、步骤、链接、复盘和资料，而不是只有一行标题。
 - **个人优先、数据在自己手里**：运行数据是本机 SQLite 数据库和 Markdown 文件；无需注册第三方账户，也不把待办上传到应用服务商。
 - **为长期事项设计的进度与提醒**：支持 0–100% 进度，达到 100% 自动完成；提醒可单次、每周指定星期持续重复，或按指定次数重复。
+- **提醒时间不再难选**：常用时段一键选择，分钟支持 5 分钟刻度，小时和分钟可以独立微调，也能直接键盘输入。
+- **关联笔记真正参与提醒**：Markdown 笔记会解析成可读的 HTML 放进提醒邮件，而不是把 Markdown 源码原样塞进邮件。
 - **安全的配置中心**：邮件和坚果云设置均在页面中保存、测试；密码不会回显，保存时使用 AES-256-GCM 加密，密钥与配置文件均不进入 Git。
 - **适合自托管的云端备份**：数据库和每份 Markdown 笔记分别进行 SHA-256 内容寻址、gzip 压缩和增量上传；每次备份保留完整快照清单，不是简单覆盖一个压缩包。
 - **低依赖、便于私有部署**：原生 HTML/CSS/JavaScript + Node.js 原生 HTTP + SQLite WASM，部署和迁移简单。
@@ -23,10 +50,63 @@
 - 完成进度概览，重点展示当前待完成工作
 - 明暗主题与移动端适配
 - 邮件提醒：单次、每周指定星期、指定次数重复；已完成待办自动停止提醒
+- 提醒时间：常用时间快捷项、5 分钟网格、加减微调和直接输入
 - 配置中心：SMTP、收件人、坚果云 WebDAV、自动备份间隔，均可保存和测试
 - 坚果云 WebDAV 增量备份数据库与 Markdown 笔记
 - SQLite 原子写入、本地滚动备份（默认保留最近 10 份）
 - 兼容从旧版 `data.json` 迁移到 SQLite
+
+## 一个任务的完整闭环
+
+```mermaid
+flowchart LR
+  A[记录待办] --> B[关联 Markdown 笔记]
+  B --> C[持续更新进度]
+  C --> D[设置发送日与时间]
+  D --> E[邮件提醒触达]
+  E --> F[完成与复盘]
+```
+
+## 示例：把一个想法变成可执行事项
+
+### 1. 给任务补上上下文
+
+每条待办都可以关联一份 Markdown 笔记，例如：
+
+```markdown
+## 本周目标
+
+把个人项目整理成一篇可以分享给朋友的介绍。
+
+## 下一步
+
+- [ ] 补充项目截图
+- [ ] 写清楚快速开始
+- [ ] 检查隐私与部署安全说明
+
+## 参考
+
+- 产品主页
+- 发布清单
+```
+
+笔记在应用内支持编辑和安全预览；触发提醒时会被渲染成更适合阅读的 HTML 邮件内容。
+
+### 2. 设置一个不容易忘记的提醒
+
+| 设置项 | 示例 |
+|---|---|
+| 重复方式 | 每周重复 |
+| 发送日 | 工作日 |
+| 提醒时间 | 09:00，或按 5 分钟刻度选择 |
+| 接收邮箱 | 当前任务单独指定，或使用全局收件人 |
+
+单次提醒成功后会自动关闭；重复提醒会在任务完成或达到指定次数后停止。
+
+## 最近更新
+
+- **Markdown 邮件渲染**：提醒邮件现在会把关联笔记解析为可读内容，并保留纯文本备用版本。
+- **现代化时间选择器**：增加常用时间、分钟刻度、小时/分钟微调和输入校验，减少配置提醒时间的操作成本。
 
 ## 技术栈
 
@@ -304,6 +384,7 @@ personal-todo-vault/
 ├── sqlite.js          # SQLite 初始化、迁移与原子保存
 ├── sql-wasm.*         # SQLite WASM 运行时
 ├── notes/.gitkeep     # 空笔记目录占位；真实笔记不提交
+├── docs/screenshots/  # README 展示用的脱敏界面截图
 ├── .env.example       # 不含秘密的环境变量示例
 ├── SPEC.md            # 产品与技术规格
 └── package.json       # Node.js 依赖与脚本
