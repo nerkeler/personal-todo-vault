@@ -1,0 +1,512 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const vm = require('node:vm');
+const zlib = require('node:zlib');
+const { Readable } = require('node:stream');
+
+const ROOT = path.resolve(__dirname, '..');
+const TEMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'todo-release-regression-'));
+const DATA_DIR = path.join(TEMP_ROOT, 'data');
+const CONFIG_DIR = path.join(TEMP_ROOT, 'config');
+fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(CONFIG_DIR, { recursive: true });
+
+const ENV_KEYS = [
+  'TODO_DATA_DIR', 'TODO_NOTES_DIR', 'TODO_DB_FILE', 'TODO_CONFIG_DIR',
+  'TODO_ALLOWED_ORIGINS', 'TODO_RESTORE_MAX_BYTES',
+];
+const savedEnv = Object.fromEntries(ENV_KEYS.map(key => [key, process.env[key]]));
+process.env.TODO_DATA_DIR = DATA_DIR;
+process.env.TODO_NOTES_DIR = path.join(DATA_DIR, 'notes');
+process.env.TODO_DB_FILE = path.join(DATA_DIR, 'todo.db');
+process.env.TODO_CONFIG_DIR = CONFIG_DIR;
+delete process.env.TODO_RESTORE_MAX_BYTES;
+
+const db = require(path.join(ROOT, 'sqlite.js'));
+
+function json(value) {
+  return JSON.stringify(value);
+}
+
+function hash(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+function sameDayWeekday(date = new Date()) {
+  const day = date.getDay();
+  return day === 0 ? 7 : day;
+}
+
+function currentReminderTime(date = new Date()) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function createServerHarness() {
+  let handler;
+  let sendCalls = 0;
+  let sendControl = null;
+  const config = {
+    email: {
+      enabled: true,
+      host: 'smtp.invalid',
+      port: 465,
+      secure: true,
+      user: 'synthetic',
+      password: 'synthetic',
+      recipients: 'audit@example.invalid',
+      from: 'audit@example.invalid',
+      fromName: 'Audit',
+    },
+    webdav: {},
+  };
+  const sendEmail = () => {
+    sendCalls += 1;
+    if (sendControl) {
+      sendControl.startedResolve();
+      return sendControl.promise;
+    }
+    return Promise.resolve({ success: true });
+  };
+  const modules = {
+    './sqlite.js': db,
+    './email.js': {
+      sendEmail,
+      sendTestEmail: async () => ({ success: true }),
+    },
+    './appConfig.js': {
+      getFullConfig: () => config,
+      saveAppConfig: () => config,
+      publicAppConfig: () => config,
+      isEmailConfigured: () => true,
+      migrateStoredConfigSecrets: () => {},
+    },
+    './cloudBackup.js': {
+      getBackupConfig: () => ({ configured: false, autoEnabled: false }),
+      publicBackupStatus: () => ({ configured: false }),
+      testBackupConfig: async () => ({ success: true }),
+      uploadBackup: async () => ({ success: true }),
+    },
+  };
+  const context = vm.createContext({
+    require: name => modules[name] || require(name.startsWith('./') ? path.join(ROOT, name) : name),
+    __dirname: ROOT,
+    process: {
+      env: {
+        PORT: '8238',
+        HOST: '127.0.0.1',
+        TODO_DATA_DIR: DATA_DIR,
+        TODO_NOTES_DIR: path.join(DATA_DIR, 'notes'),
+        TODO_DB_FILE: path.join(DATA_DIR, 'todo.db'),
+        TODO_CONFIG_DIR: CONFIG_DIR,
+        TODO_ALLOWED_ORIGINS: 'https://todo.example.test',
+      },
+      pid: process.pid,
+    },
+    console,
+    Buffer,
+    URL,
+    setInterval: () => null,
+    clearInterval: () => {},
+    setTimeout,
+    clearTimeout,
+  });
+  context.http = undefined;
+  context.require = name => {
+    if (name === 'http') {
+      return {
+        createServer: callback => {
+          handler = callback;
+          return { listen() {}, on() {} };
+        },
+      };
+    }
+    return modules[name] || require(name.startsWith('./') ? path.join(ROOT, name) : name);
+  };
+  const source = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8').split('\nbootstrap();')[0];
+  vm.runInContext(source, context, { filename: path.join(ROOT, 'server.js') });
+
+  function gateEmail() {
+    let resolve;
+    let startedResolve;
+    const promise = new Promise(result => { resolve = result; });
+    const started = new Promise(result => { startedResolve = result; });
+    sendControl = { promise, resolve, startedResolve };
+    return {
+      started,
+      release(value = { success: true }) {
+        const control = sendControl;
+        sendControl = null;
+        control.resolve(value);
+      },
+    };
+  }
+
+  return {
+    context,
+    get handler() { return handler; },
+    get sendCalls() { return sendCalls; },
+    gateEmail,
+  };
+}
+
+async function request(harness, method, requestUrl, payload, headers = {}) {
+  const requestBody = payload === undefined ? [] : [json(payload)];
+  const req = Readable.from(requestBody);
+  Object.assign(req, {
+    method,
+    url: requestUrl,
+    headers: { host: 'todo.internal:8238', ...headers },
+    socket: { encrypted: false },
+  });
+  let resolveResponse;
+  const responseDone = new Promise(resolve => { resolveResponse = resolve; });
+  const res = {
+    headers: {},
+    status: 200,
+    writableEnded: false,
+    setHeader(name, value) { this.headers[name] = value; },
+    writeHead(status, headersToAdd = {}) {
+      this.status = status;
+      Object.assign(this.headers, headersToAdd);
+    },
+    end(body = '') {
+      this.writableEnded = true;
+      this.rawBody = body;
+      resolveResponse();
+    },
+  };
+  const result = harness.handler(req, res);
+  await Promise.all([Promise.resolve(result), responseDone]);
+  let body = res.rawBody;
+  if (Buffer.isBuffer(body)) body = body.toString('utf8');
+  try { body = JSON.parse(body); } catch (_) {}
+  return { status: res.status, headers: res.headers, body };
+}
+
+async function createReminderTodo(harness, title, mode = 'once', repeatCount = 1) {
+  const created = await request(harness, 'POST', '/api/todos', {
+    title,
+    categoryId: 'cat_default',
+  });
+  assert.equal(created.status, 200);
+  const reminder = {
+    reminderEnabled: true,
+    reminderTime: currentReminderTime(),
+    reminderMode: mode,
+    reminderWeekdays: mode === 'once' ? [] : [sameDayWeekday()],
+    reminderRepeatCount: repeatCount,
+    creatorEmail: 'audit@example.invalid',
+  };
+  const updated = await request(harness, 'PATCH', `/api/todos/${created.body.id}`, reminder);
+  assert.equal(updated.status, 200);
+  return created.body.id;
+}
+
+async function testServer() {
+  await db.initDB();
+  const harness = createServerHarness();
+
+  assert.equal((await request(harness, 'GET', '/')).status, 200, '根页面应可访问');
+  assert.equal((await request(harness, 'GET', '/server.js')).status, 404, '源码不应由静态处理器暴露');
+  assert.equal((await request(harness, 'GET', '/%2e%2e/server.js')).status, 404, '编码路径逃逸应被拒绝');
+
+  assert.equal((await request(harness, 'GET', '/api/todos', undefined, {
+    origin: 'http://todo.internal:8238',
+  })).status, 200, '同源 HTTP 请求应可访问');
+  assert.equal((await request(harness, 'GET', '/api/todos', undefined, {
+    origin: 'https://todo.example.test',
+  })).status, 200, '显式配置的 HTTPS 反代来源应可访问');
+  assert.equal((await request(harness, 'GET', '/api/todos', undefined, {
+    origin: 'https://evil.example.test',
+    'x-forwarded-proto': 'https',
+  })).status, 403, '未配置来源即使伪造 X-Forwarded-Proto 也应被拒绝');
+  assert.equal((await request(harness, 'GET', '/api/todos', undefined, {
+    origin: 'https://todo.example.test.evil',
+  })).status, 403, '相似但未列入白名单的来源应被拒绝');
+  assert.equal((await request(harness, 'GET', '/api/todos', undefined, {
+    origin: 'null',
+  })).status, 403, 'null Origin 应被拒绝');
+
+  const noOpId = await createReminderTodo(harness, 'no-op reminder', 'count', 4);
+  db.updateTodo(noOpId, { reminderSentCount: 2, reminderLastSentAt: '' });
+  const noOp = await request(harness, 'PATCH', `/api/todos/${noOpId}`, {
+    reminderEnabled: true,
+    reminderTime: currentReminderTime(),
+    reminderMode: 'count',
+    reminderWeekdays: [sameDayWeekday()],
+    reminderRepeatCount: 4,
+  });
+  assert.equal(noOp.body.reminderSentCount, 2, '相同提醒规则保存不得清零计数');
+  assert.equal(noOp.body.reminderLastSentAt, '', '相同提醒规则保存不得清空发送时间');
+  db.updateTodo(noOpId, { reminderEnabled: false });
+
+  const completionId = await createReminderTodo(harness, 'completion while sending');
+  const completionGate = harness.gateEmail();
+  const completionTick = vm.runInContext('runReminderTick()', harness.context);
+  await completionGate.started;
+  await request(harness, 'PATCH', `/api/todos/${completionId}`, { completed: true, progress: 100 });
+  completionGate.release();
+  await completionTick;
+  const completed = db.getTodos().find(todo => todo.id === completionId);
+  assert.equal(completed.completed, true);
+  assert.equal(completed.reminderSentCount, 0, '完成期间旧发送不能回写计数');
+  const reopened = await request(harness, 'PATCH', `/api/todos/${completionId}`, { completed: false, progress: 0 });
+  assert.equal(reopened.body.reminderEnabled, false, '完成后重新打开不得恢复旧提醒状态');
+
+  const closeId = await createReminderTodo(harness, 'disable while sending');
+  const closeGate = harness.gateEmail();
+  const closeTick = vm.runInContext('runReminderTick()', harness.context);
+  await closeGate.started;
+  await request(harness, 'PATCH', `/api/todos/${closeId}`, { reminderEnabled: false });
+  closeGate.release();
+  await closeTick;
+  const closed = db.getTodos().find(todo => todo.id === closeId);
+  assert.equal(closed.reminderEnabled, false);
+  assert.equal(closed.reminderSentCount, 0, '关闭期间旧发送不能回写计数');
+
+  const concurrentId = await createReminderTodo(harness, 'concurrent reminder');
+  const callsBefore = harness.sendCalls;
+  const concurrentGate = harness.gateEmail();
+  const firstTick = vm.runInContext('runReminderTick()', harness.context);
+  await concurrentGate.started;
+  const secondTick = vm.runInContext('runReminderTick()', harness.context);
+  await secondTick;
+  concurrentGate.release();
+  await firstTick;
+  assert.equal(harness.sendCalls, callsBefore + 1, '同一任务并发检查只能发送一次');
+  assert.equal(db.getTodos().find(todo => todo.id === concurrentId).reminderSentCount, 1);
+}
+
+function createCloudContext(requestImpl) {
+  const context = vm.createContext({
+    require: name => require(name.startsWith('./') ? path.join(ROOT, name) : name),
+    module: { exports: {} },
+    process: { env: { TODO_RESTORE_MAX_BYTES: '' } },
+    Buffer,
+    URL,
+    console,
+    setTimeout,
+    clearTimeout,
+  });
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'cloudBackup.js'), 'utf8'), context, {
+    filename: path.join(ROOT, 'cloudBackup.js'),
+  });
+  context.mockRequest = requestImpl;
+  vm.runInContext('webdavRequest = mockRequest', context);
+  return context;
+}
+
+async function testCloudBackup() {
+  const baseUrl = 'https://mock.invalid/dav/';
+  const config = {
+    configured: true,
+    baseUrl,
+    backupDir: 'audit',
+    username: 'synthetic',
+    password: 'synthetic',
+  };
+  const objects = new Map();
+  const requests = [];
+  const requestImpl = async (method, targetUrl, _config, body, _headers, options = {}) => {
+    const key = new URL(targetUrl).pathname;
+    requests.push({ method, key, options });
+    if (method === 'MKCOL') return { statusCode: 201, body: '' };
+    if (method === 'PUT') {
+      objects.set(key, Buffer.from(body || ''));
+      return { statusCode: 201, body: '' };
+    }
+    if (!objects.has(key)) return { statusCode: 404, body: options.binary ? Buffer.alloc(0) : '' };
+    const value = objects.get(key);
+    if (method === 'HEAD') return { statusCode: 200, body: '' };
+    return { statusCode: 200, body: options.binary ? Buffer.from(value) : value.toString('utf8') };
+  };
+  const context = createCloudContext(requestImpl);
+
+  const dbContent = Buffer.from('synthetic database bytes');
+  const noteContent = Buffer.from('# synthetic note\n');
+  const databaseHash = hash(dbContent);
+  const noteHash = hash(noteContent);
+  const manifest = {
+    schemaVersion: 2,
+    app: 'todo-app',
+    type: 'snapshot',
+    snapshotId: 'synthetic-snapshot',
+    createdAt: new Date().toISOString(),
+    source: { rootDir: 'data', dbFile: 'todo.db', notesDir: 'notes' },
+    strategy: 'content-addressed-incremental',
+    database: {
+      name: 'todo.db',
+      hash: databaseHash,
+      objectPath: `objects/database/${databaseHash}.db.gz`,
+      size: dbContent.length,
+    },
+    notes: [{
+      name: 'synthetic.md',
+      hash: noteHash,
+      objectPath: `objects/notes/${noteHash}.md.gz`,
+      size: noteContent.length,
+    }],
+  };
+  const latest = {
+    schemaVersion: 2,
+    app: 'todo-app',
+    type: 'latest-pointer',
+    snapshotPath: 'snapshots/synthetic-snapshot.json',
+    databaseHash,
+  };
+  const remoteKey = relative => `/dav/audit/${relative}`;
+  objects.set(remoteKey('latest.json'), Buffer.from(json(latest)));
+  objects.set(remoteKey('snapshots/synthetic-snapshot.json'), Buffer.from(json(manifest)));
+  objects.set(remoteKey(manifest.database.objectPath), zlib.gzipSync(dbContent));
+  objects.set(remoteKey(manifest.notes[0].objectPath), zlib.gzipSync(noteContent));
+
+  const restoredPath = path.join(TEMP_ROOT, 'restored-cloud');
+  const restored = await context.module.exports.restoreBackup(config, { outputDir: restoredPath });
+  assert.equal(restored.noteCount, 1);
+  assert.deepEqual(fs.readFileSync(path.join(restoredPath, 'todo.db')), dbContent);
+  assert.deepEqual(fs.readFileSync(path.join(restoredPath, 'notes', 'synthetic.md')), noteContent);
+  assert(requests.some(item => item.key.endsWith('/latest.json') && item.options.maxResponseBytes === 128 * 1024 * 1024));
+  assert(requests.some(item => item.options.binary && item.options.maxResponseBytes === 128 * 1024 * 1024));
+  await assert.rejects(
+    context.module.exports.restoreBackup(config, { outputDir: restoredPath }),
+    /已存在/,
+    '恢复工具不得覆盖已有目录',
+  );
+
+  objects.set(remoteKey(manifest.notes[0].objectPath), Buffer.from('corrupted object'));
+  const corruptPath = path.join(TEMP_ROOT, 'corrupt-cloud');
+  await assert.rejects(context.module.exports.restoreBackup(config, { outputDir: corruptPath }));
+  assert.equal(fs.existsSync(corruptPath), false, '对象校验失败时不得发布恢复目录');
+
+  const oversized = {
+    ...manifest,
+    snapshotId: 'oversized',
+    database: {
+      ...manifest.database,
+      size: 128 * 1024 * 1024 + 1,
+    },
+  };
+  objects.set(remoteKey('latest.json'), Buffer.from(json({ ...latest, snapshotPath: 'snapshots/oversized.json' })));
+  objects.set(remoteKey('snapshots/oversized.json'), Buffer.from(json(oversized)));
+  const oversizedPath = path.join(TEMP_ROOT, 'oversized-cloud');
+  await assert.rejects(context.module.exports.restoreBackup(config, { outputDir: oversizedPath }), /上限/);
+  assert.equal(fs.existsSync(oversizedPath), false);
+
+  const sameContent = Buffer.from('same content');
+  const sameCompressed = zlib.gzipSync(sameContent);
+  const validConflict = createCloudContext(async (method, targetUrl, _config, body, _headers, options = {}) => {
+    if (method === 'HEAD') return { statusCode: 404, body: '' };
+    if (method === 'PUT') return { statusCode: 409, body: 'Conflict' };
+    if (method === 'GET') return { statusCode: 200, body: options.binary ? sameCompressed : sameCompressed.toString('utf8') };
+    return { statusCode: 404, body: '' };
+  });
+  const reused = await vm.runInContext(
+    "putObjectIfMissing({baseUrl:'https://mock.invalid/dav/',backupDir:'audit',username:'u',password:'p'},'objects/a.gz',zlib.gzipSync(Buffer.from('same content')),'application/gzip')",
+    Object.assign(validConflict, { zlib }),
+  );
+  assert.equal(reused.reused, true, '409 只有在远程对象内容校验一致时才可复用');
+
+  const invalidConflict = createCloudContext(async method => {
+    if (method === 'HEAD') return { statusCode: 404, body: '' };
+    if (method === 'PUT') return { statusCode: 409, body: 'Conflict' };
+    return { statusCode: 404, body: '' };
+  });
+  await assert.rejects(vm.runInContext(
+    "putObjectIfMissing({baseUrl:'https://mock.invalid/dav/',backupDir:'audit',username:'u',password:'p'},'objects/a.gz',Buffer.from('not gzip'),'application/gzip')",
+    invalidConflict,
+  ), /冲突|远程/);
+}
+
+async function testFrontend() {
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]);
+  assert(scripts.length > 0);
+  new Function(scripts[scripts.length - 1]);
+  assert.match(html, /\.todo-item\.editing \.todo-actions \{ visibility: hidden;/);
+  assert.match(html, /todo-title-placeholder/);
+  assert.match(html, /<textarea[\s\S]*class="edit-input"/);
+  assert.doesNotMatch(html, /<div class="todo-text[^>]*onclick=/);
+
+  const loadStart = html.indexOf('  async function loadNote(');
+  const loadEnd = html.indexOf('  function setNoteMode(', loadStart);
+  const loadCode = html.slice(loadStart, loadEnd);
+  const nodes = {
+    noteEditor: { value: '' },
+    noteSaveStatus: { textContent: '' },
+    noteModalTitle: { textContent: '' },
+  };
+  const pending = new Map();
+  const loadContext = vm.createContext({
+    document: { getElementById: id => nodes[id] },
+    fetch: requestUrl => new Promise(resolve => pending.set(requestUrl, resolve)),
+    API: '/api',
+    todos: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }],
+    noteTodoId: 'a',
+    noteMode: 'preview',
+    noteSessionToken: 1,
+    noteLoadStatus: 'loading',
+    noteLoadedSessionToken: 0,
+    renderNotePreview: () => {},
+    setNoteReadOnlyState: () => {},
+    console,
+  });
+  vm.runInContext(loadCode, loadContext);
+  const loadA = vm.runInContext("loadNote('a', 1)", loadContext);
+  loadContext.noteTodoId = 'b';
+  loadContext.noteSessionToken = 2;
+  const loadB = vm.runInContext("loadNote('b', 2)", loadContext);
+  pending.get('/api/todos/b/note')({ ok: true, json: async () => ({ content: 'B content' }) });
+  await loadB;
+  pending.get('/api/todos/a/note')({ ok: true, json: async () => ({ content: 'A content' }) });
+  await loadA;
+  assert.equal(nodes.noteEditor.value, 'B content', '旧笔记响应不得覆盖当前会话');
+
+  const saveStart = html.indexOf('  async function saveNote(');
+  const saveEnd = html.indexOf('  /* ── Markdown renderer ──', saveStart);
+  const saveCode = html.slice(saveStart, saveEnd);
+  const saveStatus = { textContent: '' };
+  const saveContext = vm.createContext({
+    document: { getElementById: id => id === 'noteSaveStatus' ? saveStatus : { value: '' } },
+    noteTodoId: 'a',
+    noteLoadStatus: 'loading',
+    noteLoadedSessionToken: 1,
+    noteSessionToken: 1,
+    noteSaveInFlight: false,
+  });
+  vm.runInContext(saveCode, saveContext);
+  await vm.runInContext('saveNote()', saveContext);
+  assert.equal(saveStatus.textContent, '笔记加载中…', '笔记未加载完成时不得保存');
+}
+
+(async () => {
+  try {
+    await testServer();
+    await testCloudBackup();
+    await testFrontend();
+    console.log(JSON.stringify({
+      passed: true,
+      checks: [
+        'static allowlist and same-origin proxy policy',
+        'reminder no-op/concurrency/stale-state protection',
+        'WebDAV response and gzip limits',
+        '409 content verification and safe restore publish',
+        'note race/loading guard and fixed edit layout',
+      ],
+      tempDirectory: TEMP_ROOT,
+    }));
+  } catch (error) {
+    console.error(error.stack || error);
+    process.exitCode = 1;
+  } finally {
+    try { db.closeDB(); } catch (_) {}
+    for (const key of ENV_KEYS) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
+  }
+})();
