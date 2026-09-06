@@ -6,6 +6,8 @@ nodemailer.tgz
 
 # Runtime data and local recovery copies — never commit personal content
 backups/
+data/
+config/
 todo.db
 data.json
 notes/*

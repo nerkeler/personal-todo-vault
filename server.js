@@ -11,10 +11,11 @@ const url = require('url');
 const PORT = Number(process.env.PORT) || 8238;
 const HOST = process.env.HOST || '127.0.0.1';
 const DB_PY = null; // 不再调用 Python
-const NOTES_DIR = path.join(__dirname, 'notes');
+const DATA_DIR = process.env.TODO_DATA_DIR || __dirname;
+const NOTES_DIR = process.env.TODO_NOTES_DIR || path.join(DATA_DIR, 'notes');
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_NOTE_BODY_BYTES = 4 * 1024 * 1024;
-const DB_FILE = path.join(__dirname, 'todo.db');
+const DB_FILE = process.env.TODO_DB_FILE || path.join(DATA_DIR, 'todo.db');
 const BACKUP_PATHS = { rootDir: __dirname, dbFile: DB_FILE, notesDir: NOTES_DIR };
 
 // ── 环境变量加载（读取 /etc/environment）──────────────────

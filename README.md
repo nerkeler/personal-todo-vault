@@ -64,6 +64,26 @@ backups/       # 本地数据库滚动备份（个人数据，不提交）
 config.local.* # 加密的配置与机器本地密钥（不提交）
 ```
 
+## Docker
+
+项目提供 Dockerfile 和 Compose 配置。容器内服务默认监听 `0.0.0.0:8238`，并只使用两个持久化目录：
+
+```text
+./data/      → /data    # todo.db、notes/、backups/
+./config/    → /config  # config.local.json、config.local.key
+```
+
+启动：
+
+```bash
+mkdir -p data config
+docker compose up -d --build
+```
+
+打开 <http://127.0.0.1:8238/>。首次从现有本机服务迁移时，先停止旧服务，再把 `todo.db`、`notes/`、`backups/` 复制到 `data/`，把 `config.local.json`、`config.local.key` 复制到 `config/`。不要同时运行旧服务和容器，避免重复提醒或并发写入数据库。
+
+坚果云同步仍由容器内的 Node 服务通过 HTTPS/WebDAV 执行；只要容器可以访问坚果云，且 `data/` 持久化，增量备份逻辑不变。不要删除这两个目录，也不要使用 `docker compose down -v`，除非确认要删除数据。
+
 ## 网络访问与安全
 
 ### 本机访问（推荐开发环境）
@@ -266,9 +286,15 @@ TODO_BACKUP_INTERVAL_HOURS=24
 
 ## 数据迁移与恢复
 
-- 若首次启动时不存在 `todo.db`、但根目录存在旧版 `data.json`，服务会自动迁移数据到 SQLite。
-- 已存在 `todo.db` 时不会重复导入 `data.json`。
-- 本地保存采用临时文件、`fsync` 和原子替换，并保留最近 10 份滚动数据库备份。
+- 若首次启动时不存在 `todo.db`、但 `TODO_JSON_FILE` 指向的旧版 `data.json` 存在，服务会自动迁移数据到 SQLite；Docker 默认读取 `/data/data.json`。
+- 也可以显式执行生产迁移脚本。脚本默认使用 `TODO_DATA_DIR` 下的 `data.json` 和 `todo.db`，目标数据库已存在时会拒绝覆盖：
+
+  ```bash
+  TODO_DATA_DIR=/data npm run migrate
+  ```
+
+- 只有确认要重新生成数据库时才使用 `npm run migrate -- --force`；覆盖前会把原数据库备份到 `TODO_BACKUP_DIR`（默认 `/data/backups`）。
+- 脚本使用当前完整 SQLite 结构、校验源数据并原子写入；本地服务保存数据库时也采用临时文件、`fsync` 和原子替换，并保留最近 10 份滚动备份。
 - 坚果云备份目前提供增量上传与完整快照清单；恢复流程应根据快照清单取回相应数据库/笔记对象。执行恢复前，请先停止服务并备份现有运行目录。
 
 ## API 概览

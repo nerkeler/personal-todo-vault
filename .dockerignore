@@ -1,0 +1,12 @@
+.git
+.gitignore
+node_modules
+*.log
+todo.db
+data.json
+notes
+backups
+config.local.json
+config.local.key
+data
+config
