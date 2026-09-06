@@ -4,6 +4,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "migrate": "node migrate.js",
     "check": "node --check server.js"
   },
   "engines": {

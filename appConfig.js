@@ -2,8 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const CONFIG_FILE = process.env.TODO_CONFIG_FILE || path.join(__dirname, 'config.local.json');
-const CONFIG_KEY_FILE = process.env.TODO_CONFIG_KEY_FILE || path.join(__dirname, 'config.local.key');
+const CONFIG_DIR = process.env.TODO_CONFIG_DIR || __dirname;
+const CONFIG_FILE = process.env.TODO_CONFIG_FILE || path.join(CONFIG_DIR, 'config.local.json');
+const CONFIG_KEY_FILE = process.env.TODO_CONFIG_KEY_FILE || path.join(CONFIG_DIR, 'config.local.key');
 const ENCRYPTED_PREFIX = 'enc:v1:';
 
 const DEFAULT_CONFIG = {

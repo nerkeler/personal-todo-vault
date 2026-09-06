@@ -124,6 +124,34 @@ backups/       # 本地数据库滚动备份（个人数据，不提交）
 config.local.* # 加密的配置与机器本地密钥（不提交）
 ```
 
+## Docker
+
+项目提供 Dockerfile 和 Compose 配置。容器内服务默认监听 `0.0.0.0:8238`，并只使用两个持久化目录：
+
+```text
+./data/      → /data    # todo.db、notes/、backups/
+./config/    → /config  # config.local.json、config.local.key
+```
+
+启动：
+
+```bash
+mkdir -p data config
+docker compose up -d --build
+```
+
+首次从现有本机服务迁移时，先停止旧服务，再把 `todo.db`、`notes/`、`backups/` 复制到 `data/`，把 `config.local.json`、`config.local.key` 复制到 `config/`。不要同时运行旧服务和容器，避免重复提醒或并发写入数据库。
+
+如果需要从旧版 `data.json` 手动生成数据库，脚本会按 `TODO_DATA_DIR` 定位文件，目标数据库已存在时默认拒绝覆盖：
+
+```bash
+TODO_DATA_DIR=/data npm run migrate
+```
+
+确认要重做迁移时才使用 `npm run migrate -- --force`；覆盖前会把原数据库备份到 `TODO_BACKUP_DIR`（默认 `/data/backups`）。
+
+坚果云同步仍由容器内的 Node 服务通过 HTTPS/WebDAV 执行；只要容器可以访问坚果云，且 `data/` 持久化，增量备份逻辑不变。不要删除这两个目录，也不要使用 `docker compose down -v`，除非确认要删除数据。
+
 ## 网络访问与安全
 
 ### 本机访问（推荐开发环境）

@@ -6,9 +6,10 @@ const fs = require('fs');
 const path = require('path');
 const initSqlJs = require('./sql-wasm.js');
 
-const DB_FILE = path.join(__dirname, 'todo.db');
-const JSON_FILE = path.join(__dirname, 'data.json');
-const BACKUP_DIR = path.join(__dirname, 'backups');
+const DATA_DIR = process.env.TODO_DATA_DIR || __dirname;
+const DB_FILE = process.env.TODO_DB_FILE || path.join(DATA_DIR, 'todo.db');
+const JSON_FILE = process.env.TODO_JSON_FILE || path.join(DATA_DIR, 'data.json');
+const BACKUP_DIR = process.env.TODO_BACKUP_DIR || path.join(DATA_DIR, 'backups');
 const MAX_BACKUPS = 10;
 let db = null;
 
