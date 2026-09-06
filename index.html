@@ -422,7 +422,7 @@
       white-space: nowrap; flex-shrink: 0;
     }
     .add-btn:hover { background: var(--primary-dark); transform: translateY(-1px); }
-    .add-btn:active { transform: translateY(0); }
+    .add-btn:active { transform: translateY(0) scale(0.985); }
 
     /* Category picker button */
     .cat-picker-btn {
@@ -544,12 +544,18 @@
       gap: 10px;
       box-shadow: var(--shadow);
       transition: all 0.25s ease;
-      animation: fadeSlideIn 0.3s ease;
     }
 
     @keyframes fadeSlideIn {
       from { opacity: 0; transform: translateY(-6px); }
       to   { opacity: 1; transform: translateY(0); }
+    }
+    .todo-item.motion-enter { animation: fadeSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+    .todo-list.motion-list-change { animation: listRefresh 0.22s cubic-bezier(0.16, 1, 0.3, 1) both; }
+    @keyframes listRefresh {
+      from { opacity: 0.55; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .todo-item:hover {
@@ -589,6 +595,17 @@
       transform: rotate(45deg) translateY(-1px);
       display: block;
     }
+    .checkbox.just-checked { animation: checkboxPop 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+    .checkbox.just-checked::after { animation: checkboxDraw 0.22s ease-out both; }
+    @keyframes checkboxPop {
+      0% { transform: scale(0.88); }
+      60% { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+    @keyframes checkboxDraw {
+      from { opacity: 0; transform: rotate(45deg) translateY(-1px) scale(0.5); }
+      to { opacity: 1; transform: rotate(45deg) translateY(-1px) scale(1); }
+    }
 
     /* Todo body */
     .todo-body { flex: 1; min-width: 0; }
@@ -598,7 +615,7 @@
       line-height: 1.5;
       color: var(--text);
       word-break: break-word;
-      cursor: pointer;
+      cursor: default;
     }
     .todo-item.completed .todo-text {
       text-decoration: line-through;
@@ -723,6 +740,8 @@
       flex-shrink: 0;
     }
     .todo-item:hover .todo-actions { opacity: 1; }
+    /* Keep the action column's width while editing so the card does not reflow. */
+    .todo-item.editing .todo-actions { visibility: hidden; pointer-events: none; }
 
     .todo-act-btn {
       width: 26px; height: 26px;
@@ -743,17 +762,27 @@
     .todo-act-btn.move:hover { background: var(--primary-light); color: var(--primary); }
 
     /* Edit input */
+    .todo-title-editor { position: relative; min-width: 0; }
+    .todo-title-placeholder { visibility: hidden; pointer-events: none; }
     .edit-input {
+      position: absolute;
+      inset: 0;
       width: 100%;
+      height: 100%;
+      min-height: 1.5em;
       border: 1.5px solid var(--primary);
       border-radius: 6px;
-      padding: 4px 10px;
+      padding: 0 10px;
       font-size: 0.93rem;
+      line-height: 1.5;
       font-family: inherit;
+      box-sizing: border-box;
       color: var(--text);
       background: var(--bg);
       outline: none;
       box-shadow: 0 0 0 3px var(--primary-light);
+      resize: none;
+      overflow: auto;
     }
 
     /* Empty state */
@@ -795,6 +824,29 @@
       color: var(--text-3);
     }
 
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      z-index: 600;
+      max-width: min(360px, calc(100vw - 32px));
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text-2);
+      box-shadow: var(--shadow-lg);
+      font-size: 0.82rem;
+      line-height: 1.4;
+      text-align: center;
+      opacity: 0;
+      transform: translate(-50%, 10px);
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .toast[hidden] { display: none; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
     /* ── Modal ── */
     .modal-overlay {
       display: none;
@@ -806,7 +858,8 @@
       align-items: center;
       padding: 20px;
     }
-    .modal-overlay.show { display: flex; }
+    .modal-overlay.show { display: flex; animation: modalOverlayIn 0.22s ease-out both; }
+    .modal-overlay.closing { display: flex; animation: modalOverlayOut 0.16s ease-in both; pointer-events: none; }
 
     .modal {
       background: var(--surface);
@@ -815,11 +868,34 @@
       width: 100%;
       max-width: 420px;
       box-shadow: var(--shadow-lg);
-      animation: modalIn 0.2s ease;
+    }
+    .modal-overlay.show:not(.origin-motion) .modal { animation: modalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both; }
+    .modal-overlay.closing:not(.origin-motion) .modal { animation: modalOut 0.16s ease-in both; }
+    .modal-overlay.origin-motion .modal {
+      animation: none;
+      opacity: 0;
+      transform: scale(0.84);
+    }
+    .modal-overlay.origin-motion.motion-ready .modal,
+    .modal-overlay.origin-motion.closing .modal {
+      opacity: 1;
+      transform: scale(1);
+    }
+    @keyframes modalOverlayIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes modalOverlayOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
     }
     @keyframes modalIn {
-      from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+      from { opacity: 0; transform: scale(0.985) translateY(8px); }
       to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    @keyframes modalOut {
+      from { opacity: 1; transform: scale(1) translateY(0); }
+      to { opacity: 0; transform: scale(0.985) translateY(5px); }
     }
 
     .modal-title {
@@ -1376,6 +1452,7 @@
       .sidebar-close { display: flex; align-items: center; justify-content: center; }
       .main { margin-left: 0; padding: 20px 16px 10px; }
       .main-sticky { margin: -20px -16px 0; padding: 20px 16px 0; }
+      .toast { bottom: 16px; }
       .menu-btn { display: flex; align-items: center; justify-content: center; }
       .current-cat-title { font-size: 1.25rem; }
       .add-row { flex-wrap: wrap; }
@@ -1401,6 +1478,15 @@
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto !important; }
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1436,11 +1522,11 @@
         </div>
       </div>
       <div class="header-right">
-        <button class="header-help" onclick="openHelpModal()" title="使用说明" aria-label="使用说明">
+        <button class="header-help" onclick="openHelpModal(this)" title="使用说明" aria-label="使用说明">
           📘
         </button>
         <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切换主题">🌙</button>
-        <button class="theme-toggle" id="settingsBtn" onclick="openSettingsModal()" title="配置中心">⚙️</button>
+        <button class="theme-toggle" id="settingsBtn" onclick="openSettingsModal(this)" title="配置中心">⚙️</button>
       </div>
     </div>
     </div>
@@ -1491,6 +1577,8 @@
     <div class="footer">Design by nerkeler</div>
   </main>
 </div>
+
+<div class="toast" id="appToast" role="status" aria-live="polite" hidden></div>
 
 <!-- Portal: 移动分类下拉浮层（避免 stacking context 遮挡） -->
 <div id="move-dropdown-portal" style="position:fixed;z-index:100;display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);min-width:160px;overflow:hidden;isolation:isolate;"></div>
@@ -1861,6 +1949,8 @@
   let activeCatId = null; // null = 全部
   let editingCatId = null;
   let editingTodoId = null;
+  const todoEditDrafts = new Map();
+  const todoEditSaving = new Set();
   let editingProgressTodoId = null;
   let editingReminderTodoId = null;
   const COMPLETED_PAGE_SIZE = 10;
@@ -1906,6 +1996,201 @@
       }
     });
   });
+
+  function prefersReducedMotion() {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function findTodoElement(id) {
+    return [...document.querySelectorAll('.todo-item')].find(el => el.dataset.id === String(id)) || null;
+  }
+
+  function animateTodoItem(id) {
+    const el = findTodoElement(id);
+    if (!el || prefersReducedMotion()) return;
+    el.classList.remove('motion-enter');
+    void el.offsetWidth;
+    el.classList.add('motion-enter');
+    el.addEventListener('animationend', () => el.classList.remove('motion-enter'), { once: true });
+  }
+
+  function animateTodoTransition(id, firstRect) {
+    const el = findTodoElement(id);
+    if (!el) return;
+    const checkbox = el.querySelector('.checkbox');
+    if (el.classList.contains('completed') && checkbox && !prefersReducedMotion()) {
+      checkbox.classList.remove('just-checked');
+      void checkbox.offsetWidth;
+      checkbox.classList.add('just-checked');
+      checkbox.addEventListener('animationend', () => checkbox.classList.remove('just-checked'), { once: true });
+    }
+    if (!firstRect || prefersReducedMotion() || !el.animate) return;
+    const lastRect = el.getBoundingClientRect();
+    const dx = firstRect.left - lastRect.left;
+    const dy = firstRect.top - lastRect.top;
+    const canFlip = Number.isFinite(dx) && Number.isFinite(dy) && Math.abs(dy) < Math.max(window.innerHeight * 1.5, 900);
+    if (!canFlip) {
+      animateTodoItem(id);
+      return;
+    }
+    const targetOpacity = el.classList.contains('completed') ? 0.5 : 1;
+    const animation = el.animate([
+      { transform: `translate(${dx}px, ${dy}px)`, opacity: Math.min(1, targetOpacity + 0.35) },
+      { transform: 'translate(0, 0)', opacity: targetOpacity }
+    ], { duration: 360, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
+    animation.onfinish = () => {
+      el.style.removeProperty('transform');
+      el.style.removeProperty('opacity');
+    };
+  }
+
+  function animateListChange() {
+    if (prefersReducedMotion()) return;
+    document.querySelectorAll('.todo-list').forEach(list => {
+      if (!list.children.length || list.offsetParent === null) return;
+      list.classList.remove('motion-list-change');
+      void list.offsetWidth;
+      list.classList.add('motion-list-change');
+      list.addEventListener('animationend', () => list.classList.remove('motion-list-change'), { once: true });
+    });
+  }
+
+  function clearModalMotion(modal) {
+    if (modal._motionFrame != null) {
+      window.cancelAnimationFrame(modal._motionFrame);
+      modal._motionFrame = null;
+    }
+    if (modal._motionAnimation) {
+      modal._motionAnimation.cancel();
+      modal._motionAnimation = null;
+    }
+    const panel = modal.querySelector('.modal');
+    if (panel) panel.style.removeProperty('transform-origin');
+  }
+
+  function finishModalClose(modal) {
+    clearModalMotion(modal);
+    modal.classList.remove('show', 'closing', 'origin-motion', 'motion-ready');
+    modal._motionSource = null;
+    modal._hideTimer = null;
+  }
+
+  function getModalOrigin(modal, source) {
+    const panel = modal.querySelector('.modal');
+    if (!panel || !source?.isConnected || typeof source.getBoundingClientRect !== 'function') return null;
+    const sourceRect = source.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    if (!sourceRect.width || !sourceRect.height || !panelRect.width || !panelRect.height) return null;
+    return {
+      panel,
+      x: sourceRect.left + sourceRect.width / 2 - panelRect.left,
+      y: sourceRect.top + sourceRect.height / 2 - panelRect.top,
+    };
+  }
+
+  function showModal(id, source = null) {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    if (modal._hideTimer != null) {
+      window.clearTimeout(modal._hideTimer);
+      modal._hideTimer = null;
+    }
+    clearModalMotion(modal);
+    modal.classList.remove('show', 'closing', 'origin-motion', 'motion-ready');
+    modal._motionSource = null;
+
+    const canUseOriginMotion = source && !prefersReducedMotion() && typeof Element !== 'undefined' && Element.prototype.animate;
+    if (!canUseOriginMotion) {
+      modal.classList.add('show');
+      return;
+    }
+
+    modal._motionSource = source;
+    modal.classList.add('origin-motion', 'show');
+    modal._motionFrame = window.requestAnimationFrame(() => {
+      modal._motionFrame = null;
+      if (!modal.classList.contains('show') || modal._motionSource !== source) return;
+      const origin = getModalOrigin(modal, source);
+      if (!origin) {
+        modal.classList.remove('origin-motion', 'motion-ready');
+        modal._motionSource = null;
+        return;
+      }
+      origin.panel.style.transformOrigin = `${origin.x}px ${origin.y}px`;
+      modal.classList.add('motion-ready');
+      modal._motionAnimation = origin.panel.animate([
+        { opacity: 0, transform: 'scale(0.84)' },
+        { opacity: 1, transform: 'scale(1)' }
+      ], { duration: 360, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
+      modal._motionAnimation.onfinish = () => {
+        modal._motionAnimation = null;
+      };
+    });
+  }
+
+  function hideModal(id) {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    if (modal._hideTimer != null) {
+      window.clearTimeout(modal._hideTimer);
+      modal._hideTimer = null;
+    }
+    const source = modal._motionSource;
+    const shouldReturnToOrigin = modal.classList.contains('origin-motion')
+      && !prefersReducedMotion()
+      && typeof Element !== 'undefined'
+      && Element.prototype.animate;
+    const returnOrigin = shouldReturnToOrigin ? getModalOrigin(modal, source) : null;
+    clearModalMotion(modal);
+    modal.classList.remove('show');
+    if (prefersReducedMotion()) {
+      finishModalClose(modal);
+      return;
+    }
+    modal.classList.add('closing');
+    if (shouldReturnToOrigin) {
+      const origin = returnOrigin || getModalOrigin(modal, source);
+      if (origin) {
+        origin.panel.style.transformOrigin = `${origin.x}px ${origin.y}px`;
+        modal.classList.add('origin-motion', 'motion-ready');
+        modal._motionAnimation = origin.panel.animate([
+          { opacity: 1, transform: 'scale(1)' },
+          { opacity: 0, transform: 'scale(0.84)' }
+        ], { duration: 190, easing: 'cubic-bezier(0.4, 0, 1, 1)' });
+      } else {
+        modal.classList.remove('origin-motion', 'motion-ready');
+        modal._motionSource = null;
+      }
+    } else {
+      modal.classList.remove('origin-motion', 'motion-ready');
+      modal._motionSource = null;
+    }
+    modal._hideTimer = window.setTimeout(() => finishModalClose(modal), shouldReturnToOrigin ? 205 : 180);
+  }
+
+  let toastTimer = null;
+  let toastHideTimer = null;
+
+  function showToast(message, duration = 2200) {
+    const toast = document.getElementById('appToast');
+    if (!toast) return;
+    window.clearTimeout(toastTimer);
+    window.clearTimeout(toastHideTimer);
+    toast.textContent = message;
+    toast.hidden = false;
+    requestAnimationFrame(() => toast.classList.add('show'));
+    toastTimer = window.setTimeout(hideToast, duration);
+  }
+
+  function hideToast() {
+    const toast = document.getElementById('appToast');
+    if (!toast) return;
+    toast.classList.remove('show');
+    window.clearTimeout(toastHideTimer);
+    toastHideTimer = window.setTimeout(() => {
+      if (!toast.classList.contains('show')) toast.hidden = true;
+    }, prefersReducedMotion() ? 0 : 220);
+  }
 
   /* ── Sidebar width ── */
   function initSidebarWidth() {
@@ -1967,6 +2252,14 @@
   function toggleTheme() {
     const cur = document.documentElement.getAttribute('data-theme') || 'light';
     setTheme(cur === 'dark' ? 'light' : 'dark');
+    const button = document.getElementById('themeToggle');
+    if (button && !prefersReducedMotion() && button.animate) {
+      button.animate([
+        { transform: 'rotate(-12deg) scale(0.9)' },
+        { transform: 'rotate(8deg) scale(1.08)' },
+        { transform: 'rotate(0) scale(1)' }
+      ], { duration: 260, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
+    }
   }
 
   /* ── Settings Modal ── */
@@ -2118,8 +2411,8 @@
     return payload;
   }
 
-  async function openSettingsModal() {
-    document.getElementById('settingsModal').classList.add('show');
+  async function openSettingsModal(source) {
+    showModal('settingsModal', source || document.getElementById('settingsBtn'));
     populateSettingsForm();
     setResult('settingsSaveResult', '正在读取配置…');
     try {
@@ -2131,7 +2424,7 @@
   }
 
   function closeSettingsModal() {
-    document.getElementById('settingsModal').classList.remove('show');
+    hideModal('settingsModal');
   }
 
   async function saveSettings() {
@@ -2413,7 +2706,7 @@
     updateReminderWeekdaysSummary();
   }
 
-  function openReminderModal(todoId) {
+  function openReminderModal(todoId, source) {
     const t = todos.find(t => t.id === todoId);
     if (!t || t.completed) return;
     editingReminderTodoId = todoId;
@@ -2434,10 +2727,10 @@
     if (taskProgress) taskProgress.textContent = `进度 ${progress}%`;
     updateReminderStatusCopy();
     toggleReminderRepeatFields();
-    document.getElementById('reminderModal').classList.add('show');
+    showModal('reminderModal', source);
   }
   function closeReminderModal() {
-    document.getElementById('reminderModal').classList.remove('show');
+    hideModal('reminderModal');
     editingReminderTodoId = null;
   }
   async function saveReminderSettings() {
@@ -2633,7 +2926,7 @@
     localStorage.setItem('lastUsedCatId', selectedAddCatId);
     renderCatPickerLabel();
     renderCats();
-    render();
+    render({ animateLists: true });
     closeSidebar();
   }
 
@@ -2703,7 +2996,7 @@
   }
 
   /* ── Render todos ── */
-  function render() {
+  function render({ animateTodoId = null, animateLists = false } = {}) {
     let filtered = todos;
     if (activeCatId !== null) {
       filtered = todos.filter(t => t.categoryId === activeCatId);
@@ -2741,6 +3034,8 @@
     document.getElementById('todoList').innerHTML = pending.map(makeTodoItem).join('');
     document.getElementById('doneList').innerHTML = visibleCompleted.map(makeTodoItem).join('');
     renderCompletedPagination(completedPage, pageCount);
+    if (animateLists) animateListChange();
+    if (animateTodoId) requestAnimationFrame(() => animateTodoItem(animateTodoId));
   }
 
   function renderCompletedPagination(page, pageCount) {
@@ -2765,8 +3060,8 @@
 
   function goToCompletedPage(page) {
     completedPage = Number(page) || 1;
-    render();
-    document.getElementById('doneSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    render({ animateLists: true });
+    document.getElementById('doneSection')?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
   }
 
   function makeTodoItem(t) {
@@ -2790,32 +3085,29 @@
       return '';
     })();
 
-    if (isEditing) {
-      return `
-        <div class="todo-item" data-id="${t.id}">
-          <div class="checkbox"></div>
-          <div class="todo-body">
-            <input
-              class="edit-input"
-              id="edit-todo-${t.id}"
-              value="${escHtml(t.title)}"
-              maxlength="200"
-              onkeydown="handleTodoEditKey(event, '${t.id}')"
-              onblur="saveTodoEdit('${t.id}')"
-            />
-          </div>
-        </div>
-      `;
-    }
-
     const progress = t.progress ?? 0
     const showProgress = progress > 0
+    const editValue = todoEditDrafts.has(t.id) ? todoEditDrafts.get(t.id) : t.title;
+    const titleMarkup = isEditing ? `
+      <div class="todo-title-editor">
+        <div class="todo-text todo-title-placeholder" aria-hidden="true">${escHtml(t.title)}</div>
+        <textarea
+          class="edit-input"
+          id="edit-todo-${t.id}"
+          maxlength="200"
+          rows="1"
+          oninput="rememberTodoDraft('${t.id}', this.value)"
+          onkeydown="handleTodoEditKey(event, '${t.id}')"
+          onblur="saveTodoEdit('${t.id}')"
+        >${escHtml(editValue)}</textarea>
+      </div>
+    ` : `<div class="todo-text${t.completed ? ' readonly' : ''}" ${t.completed ? 'aria-readonly="true"' : ''}>${escHtml(t.title)}</div>`;
 
     return `
-      <div class="todo-item${t.completed ? ' completed' : ''}" data-id="${t.id}">
-        <div class="checkbox${t.completed ? ' checked' : ''}" onclick="toggleTodo('${t.id}')"></div>
+      <div class="todo-item${t.completed ? ' completed' : ''}${isEditing ? ' editing' : ''}" data-id="${t.id}">
+        <div class="checkbox${t.completed ? ' checked' : ''}" ${isEditing ? '' : `onclick="toggleTodo('${t.id}')"`}></div>
         <div class="todo-body">
-          <div class="todo-text${t.completed ? ' readonly' : ''}" ${t.completed ? 'aria-readonly="true"' : `onclick="startEditTodo('${t.id}')"`}>${escHtml(t.title)}</div>
+          ${titleMarkup}
           ${t.completed ? `
           <div class="todo-progress-row" style="cursor:default;opacity:0.7">
             <div class="todo-progress-track">
@@ -2844,8 +3136,8 @@
           </div>
         </div>
         <div class="todo-actions">
-          ${!t.completed ? `<button class="todo-act-btn reminder-action${t.reminderEnabled ? ' active' : ''}" onclick="openReminderModal('${t.id}')" title="${t.reminderEnabled ? '提醒已开启' : '提醒已关闭'}">${t.reminderEnabled ? '🔔' : '🔕'}</button>` : ''}
-          <button class="todo-act-btn${t.noteFile ? ' has-note' : ''}" onclick="openNoteModal('${t.id}')" title="${t.completed ? '查看笔记（只读）' : '笔记'}">📄</button>
+          ${!t.completed ? `<button class="todo-act-btn reminder-action${t.reminderEnabled ? ' active' : ''}" onclick="openReminderModal('${t.id}', this)" title="${t.reminderEnabled ? '提醒已开启' : '提醒已关闭'}">${t.reminderEnabled ? '🔔' : '🔕'}</button>` : ''}
+          <button class="todo-act-btn${t.noteFile ? ' has-note' : ''}" onclick="openNoteModal('${t.id}', this)" title="${t.completed ? '查看笔记（只读）' : '笔记'}">📄</button>
           ${!t.completed ? `<button class="todo-act-btn" onclick="startEditTodo('${t.id}')" title="编辑">✎</button>` : ''}
           <button class="todo-act-btn del" onclick="deleteTodo('${t.id}')" title="删除">✕</button>
         </div>
@@ -2930,7 +3222,9 @@
       todos.unshift(t);
       input.value = '';
       renderCats();
-      render();
+      render({ animateTodoId: t.id });
+      const cat = categories.find(c => c.id === categoryId);
+      showToast(`已添加到 ${cat?.name || '默认'}`);
     } catch (e) { console.error(e); }
   }
 
@@ -2938,6 +3232,7 @@
     const t = todos.find(x => x.id === id);
     if (!t) return;
     const completed = !t.completed;
+    const firstRect = findTodoElement(id)?.getBoundingClientRect();
     try {
       const res = await fetch(`${API}/todos/${id}`, {
         method: 'PATCH',
@@ -2950,18 +3245,24 @@
       if (index !== -1) todos[index] = updated;
       renderCats();
       render();
+      animateTodoTransition(id, firstRect);
+      showToast(completed ? '已完成' : '已重新打开');
     } catch (e) { console.error(e); }
   }
 
   async function deleteTodo(id) {
     const el = document.querySelector(`[data-id="${id}"]`);
-    if (el) { el.classList.add('deleting'); await sleep(220); }
+    if (el && !prefersReducedMotion()) { el.classList.add('deleting'); await sleep(220); }
     try {
-      await fetch(`${API}/todos/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API}/todos/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('删除待办失败');
       todos = todos.filter(x => x.id !== id);
+      todoEditDrafts.delete(id);
+      todoEditSaving.delete(id);
       editingTodoId = null;
       renderCats();
       render();
+      showToast('待办已删除');
     } catch (e) { console.error(e); }
   }
 
@@ -2983,8 +3284,14 @@
     } catch (e) { console.error(e); }
   }
 
+  function rememberTodoDraft(id, value) {
+    todoEditDrafts.set(id, value);
+  }
+
   function startEditTodo(id) {
-    if (todos.find(t => t.id === id)?.completed) return;
+    const todo = todos.find(t => t.id === id);
+    if (!todo || todo.completed || todoEditSaving.has(id)) return;
+    todoEditDrafts.set(id, todo.title);
     editingTodoId = id;
     render();
     const inp = document.getElementById(`edit-todo-${id}`);
@@ -2992,18 +3299,21 @@
   }
 
   async function saveTodoEdit(id) {
+    if (todoEditSaving.has(id)) return;
     const inp = document.getElementById(`edit-todo-${id}`);
     if (!inp) return;
+    todoEditDrafts.set(id, inp.value);
     const newTitle = inp.value.trim();
     if (!newTitle) { inp.classList.add('shake'); setTimeout(() => inp.classList.remove('shake'), 350); return; }
     const t = todos.find(x => x.id === id);
     if (!t || t.completed) {
+      todoEditDrafts.delete(id);
       editingTodoId = null;
       render();
       return;
     }
-    t.title = newTitle;
-    editingTodoId = null;
+    todoEditSaving.add(id);
+    inp.disabled = true;
     try {
       const res = await fetch(`${API}/todos/${id}`, {
         method: 'PATCH',
@@ -3014,13 +3324,28 @@
       if (!res.ok) throw new Error(updated.error || '保存任务失败');
       const index = todos.findIndex(x => x.id === id);
       if (index !== -1) todos[index] = updated;
+      todoEditDrafts.delete(id);
+      if (editingTodoId === id) editingTodoId = null;
       render();
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      todoEditDrafts.set(id, inp.value);
+      inp.disabled = false;
+      inp.focus();
+      inp.select();
+      showToast('保存任务失败，请重试');
+    } finally {
+      todoEditSaving.delete(id);
+    }
   }
 
   function handleTodoEditKey(e, id) {
     if (e.key === 'Enter') { e.preventDefault(); saveTodoEdit(id); }
-    if (e.key === 'Escape') { editingTodoId = null; render(); }
+    if (e.key === 'Escape' && !todoEditSaving.has(id)) {
+      todoEditDrafts.delete(id);
+      editingTodoId = null;
+      render();
+    }
   }
 
   /* ── Progress Modal ── */
@@ -3032,7 +3357,7 @@
     document.getElementById('progressRange').value = val
     document.getElementById('progressRangePct').textContent = val + '%'
     document.getElementById('progressModalTitle').textContent = t ? `进度: ${t.title}` : '设置进度'
-    document.getElementById('progressModal').classList.add('show')
+    showModal('progressModal')
   }
 
   function syncProgressPct(val) {
@@ -3045,7 +3370,7 @@
   }
 
   function closeProgressModal() {
-    document.getElementById('progressModal').classList.remove('show')
+    hideModal('progressModal')
     editingProgressTodoId = null
   }
 
@@ -3067,7 +3392,8 @@
       const index = todos.findIndex(x => x.id === id)
       if (index !== -1) todos[index] = updated
       renderCats()
-      render()
+      render({ animateTodoId: id })
+      showToast('进度已更新')
     } catch (e) { console.error(e) }
   }
 
@@ -3098,7 +3424,7 @@
     document.getElementById('catNameInput').value = '';
     document.getElementById('saveCatBtn').textContent = '创建';
     document.getElementById('delCatBtn').style.display = 'none';
-    document.getElementById('catModal').classList.add('show');
+    showModal('catModal');
     document.getElementById('catNameInput').focus();
     initIconGrid();
   }
@@ -3112,7 +3438,7 @@
     document.getElementById('catNameInput').value = cat.name;
     document.getElementById('saveCatBtn').textContent = '保存';
     document.getElementById('delCatBtn').style.display = 'inline-flex';
-    document.getElementById('catModal').classList.add('show');
+    showModal('catModal');
     document.getElementById('catNameInput').focus();
     initIconGrid();
     // Pre-select current icon
@@ -3124,7 +3450,7 @@
   }
 
   function closeCatModal() {
-    document.getElementById('catModal').classList.remove('show');
+    hideModal('catModal');
   }
 
   async function saveCatModal() {
@@ -3175,11 +3501,11 @@
       ? `确定删除「${categoryIconText(cat)} ${cat.name}」吗？该分类下 ${todoCount} 条待办也会一并删除，此操作不可撤销。`
       : `确定删除「${categoryIconText(cat)} ${cat.name}」吗？`;
     document.getElementById('confirmMsg').textContent = msg;
-    document.getElementById('confirmModal').classList.add('show');
+    showModal('confirmModal');
   }
 
   function closeConfirmModal() {
-    document.getElementById('confirmModal').classList.remove('show');
+    hideModal('confirmModal');
     pendingDeleteCatId = null;
   }
 
@@ -3215,11 +3541,11 @@
   /* ── Help document ── */
   let helpLoaded = false;
 
-  async function openHelpModal() {
+  async function openHelpModal(source) {
     const modal = document.getElementById('helpModal');
     const preview = document.getElementById('helpPreview');
     if (!modal || !preview) return;
-    modal.classList.add('show');
+    showModal('helpModal', source);
     if (helpLoaded) return;
     preview.innerHTML = '<article class="note-document-page"><p>正在加载使用说明…</p></article>';
     try {
@@ -3235,68 +3561,111 @@
   }
 
   function closeHelpModal() {
-    document.getElementById('helpModal')?.classList.remove('show');
+    hideModal('helpModal');
   }
 
   /* ── Note modal ── */
   let noteTodoId = null;
   let noteMode = 'preview';
+  let noteSessionToken = 0;
+  let noteLoadStatus = 'idle';
+  let noteLoadedSessionToken = 0;
+  let noteSaveRequestToken = 0;
+  let noteSaveInFlight = false;
 
-  function setNoteReadOnlyState(readOnly) {
+  function setNoteReadOnlyState(readOnly, loading = false, saving = false) {
     const modal = document.getElementById('noteModal');
     const editTab = document.getElementById('noteTabEdit');
     const saveButton = modal?.querySelector('.modal-btn.primary');
     const editor = document.getElementById('noteEditor');
-    if (modal) modal.dataset.readonly = readOnly ? 'true' : 'false';
+    const disabled = readOnly || loading || saving;
+    if (modal) {
+      modal.dataset.readonly = readOnly ? 'true' : 'false';
+      modal.dataset.loading = loading ? 'true' : 'false';
+      modal.dataset.saving = saving ? 'true' : 'false';
+    }
     if (editTab) {
       editTab.hidden = readOnly;
-      editTab.disabled = readOnly;
+      editTab.disabled = disabled;
     }
     if (saveButton) {
       saveButton.hidden = readOnly;
-      saveButton.disabled = readOnly;
+      saveButton.disabled = disabled;
     }
-    if (editor) editor.readOnly = readOnly;
+    if (editor) editor.readOnly = disabled;
   }
 
-  async function openNoteModal(todoId) {
+  async function openNoteModal(todoId, source) {
+    noteSessionToken += 1;
+    noteLoadStatus = 'loading';
+    noteLoadedSessionToken = 0;
+    noteSaveRequestToken += 1;
+    noteSaveInFlight = false;
+    const sessionToken = noteSessionToken;
     noteTodoId = todoId;
     const t = todos.find(x => x.id === todoId);
     const title = t ? t.title : '笔记';
     document.getElementById('noteModalTitle').textContent = `📄 ${title}`;
-    setNoteReadOnlyState(!!t?.completed);
+    setNoteReadOnlyState(!!t?.completed, true);
     document.getElementById('noteSaveStatus').textContent = t?.completed ? '任务已完成 · 仅供查看' : '';
+    showModal('noteModal', source);
     setNoteMode('preview');
-    document.getElementById('noteModal').classList.add('show');
-    await loadNote(todoId);
+    document.getElementById('noteEditor').value = '';
+    document.getElementById('notePreview').innerHTML = '<article class="note-document-page"><p>正在加载笔记…</p></article>';
+    await loadNote(todoId, sessionToken);
   }
 
   function closeNoteModal() {
-    document.getElementById('noteModal').classList.remove('show');
+    noteSessionToken += 1;
+    noteLoadStatus = 'idle';
+    noteLoadedSessionToken = 0;
+    noteSaveRequestToken += 1;
+    noteSaveInFlight = false;
+    hideModal('noteModal');
     noteTodoId = null;
     setNoteReadOnlyState(false);
   }
 
-  async function loadNote(todoId) {
+  async function loadNote(todoId, sessionToken) {
+    const requestToken = sessionToken === undefined
+      ? (typeof noteSessionToken === 'number' ? noteSessionToken : 0)
+      : sessionToken;
+    const isCurrent = () => requestToken === (typeof noteSessionToken === 'number' ? noteSessionToken : 0) &&
+      noteTodoId === todoId;
     try {
       const res = await fetch(`${API}/todos/${todoId}/note`);
       const data = await res.json();
+      if (!isCurrent()) return;
       if (!res.ok) throw new Error(data.error || `加载失败（${res.status}）`);
       document.getElementById('noteEditor').value = data.content || '';
       renderNotePreview(data.content || '');
       const t = todos.find(x => x.id === todoId);
+      noteLoadStatus = 'ready';
+      noteLoadedSessionToken = requestToken;
       setNoteReadOnlyState(!!t?.completed);
       if (t?.completed && noteMode === 'edit') setNoteMode('preview');
       if (t?.completed) document.getElementById('noteSaveStatus').textContent = '任务已完成 · 仅供查看';
       document.getElementById('noteModalTitle').textContent = `📄 ${t ? t.title : '笔记'}`;
     } catch (e) {
       console.error(e);
-      document.getElementById('noteSaveStatus').textContent = '❌ 加载失败';
+      if (isCurrent()) {
+        noteLoadStatus = 'error';
+        noteLoadedSessionToken = 0;
+        const t = todos.find(x => x.id === todoId);
+        setNoteReadOnlyState(!!t?.completed, true);
+        document.getElementById('noteSaveStatus').textContent = '❌ 加载失败，请关闭后重试';
+      }
     }
   }
 
   function setNoteMode(mode) {
     const noteTodo = todos.find(x => x.id === noteTodoId);
+    if (mode === 'edit' && (noteLoadStatus !== 'ready' || noteLoadedSessionToken !== noteSessionToken)) {
+      document.getElementById('noteSaveStatus').textContent = noteLoadStatus === 'error'
+        ? '❌ 加载失败，请关闭后重试'
+        : '笔记加载中…';
+      return;
+    }
     if (mode === 'edit' && noteTodo?.completed) {
       setNoteReadOnlyState(true);
       document.getElementById('noteSaveStatus').textContent = '任务已完成 · 仅供查看';
@@ -3322,6 +3691,13 @@
 
   async function saveNote() {
     if (!noteTodoId) return;
+    if (noteSaveInFlight) return;
+    if (noteLoadStatus !== 'ready' || noteLoadedSessionToken !== noteSessionToken) {
+      document.getElementById('noteSaveStatus').textContent = noteLoadStatus === 'error'
+        ? '❌ 加载失败，请关闭后重试'
+        : '笔记加载中…';
+      return;
+    }
     const todo = todos.find(x => x.id === noteTodoId);
     if (!todo || todo.completed) {
       setNoteReadOnlyState(true);
@@ -3331,16 +3707,21 @@
     }
     const content = document.getElementById('noteEditor').value;
     const savedTodoId = noteTodoId;
-    const saveButton = document.querySelector('#noteModal .modal-btn.primary');
-    if (saveButton) saveButton.disabled = true;
+    const savedSessionToken = noteSessionToken;
+    const saveRequestToken = ++noteSaveRequestToken;
+    const isCurrent = () => noteSessionToken === savedSessionToken && noteTodoId === savedTodoId &&
+      noteSaveRequestToken === saveRequestToken;
+    noteSaveInFlight = true;
+    setNoteReadOnlyState(false, false, true);
     document.getElementById('noteSaveStatus').textContent = '保存中…';
     try {
-      const res = await fetch(`${API}/todos/${noteTodoId}/note`, {
+      const res = await fetch(`${API}/todos/${savedTodoId}/note`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content })
       });
       const data = await res.json();
+      if (!isCurrent()) return;
       if (!res.ok) {
         if (res.status === 409) {
           setNoteReadOnlyState(true);
@@ -3353,18 +3734,23 @@
       renderNotePreview(content);
       const st = document.getElementById('noteSaveStatus');
       st.textContent = '✅ 已保存';
-      const t = todos.find(x => x.id === noteTodoId);
+      const t = todos.find(x => x.id === savedTodoId);
       if (t) {
         t.noteFile = data.noteFile;
         if (data.updatedAt) t.updatedAt = data.updatedAt;
       }
       render();
       await sleep(1000);
-      if (noteTodoId === savedTodoId) closeNoteModal();
+      if (isCurrent()) closeNoteModal();
     } catch (e) {
       console.error(e);
-      document.getElementById('noteSaveStatus').textContent = '❌ 保存失败';
-      if (saveButton) saveButton.disabled = false;
+      if (isCurrent()) {
+        document.getElementById('noteSaveStatus').textContent = '❌ 保存失败';
+        const currentTodo = todos.find(x => x.id === savedTodoId);
+        setNoteReadOnlyState(!!currentTodo?.completed);
+      }
+    } finally {
+      if (noteSaveRequestToken === saveRequestToken) noteSaveInFlight = false;
     }
   }
 
