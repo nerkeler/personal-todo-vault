@@ -277,6 +277,26 @@
       max-width: 880px;
     }
 
+    /* Keep only the category header visible while the task list scrolls. */
+    .main-sticky {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      margin: -28px -32px 0;
+      padding: 28px 32px 0;
+      background: var(--bg);
+    }
+    .main-sticky::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -18px;
+      height: 18px;
+      background: linear-gradient(to bottom, var(--bg), transparent);
+      pointer-events: none;
+    }
+
     /* Header */
     .main-header {
       display: flex;
@@ -1355,6 +1375,7 @@
       .sidebar.open { transform: translateX(0); }
       .sidebar-close { display: flex; align-items: center; justify-content: center; }
       .main { margin-left: 0; padding: 20px 16px 10px; }
+      .main-sticky { margin: -20px -16px 0; padding: 20px 16px 0; }
       .menu-btn { display: flex; align-items: center; justify-content: center; }
       .current-cat-title { font-size: 1.25rem; }
       .add-row { flex-wrap: wrap; }
@@ -1405,6 +1426,7 @@
 
   <!-- Main content -->
   <main class="main">
+    <div class="main-sticky">
     <div class="main-header">
       <div style="display:flex;align-items:center;gap:12px">
         <button class="menu-btn" onclick="openSidebar()">☰</button>
@@ -1420,6 +1442,7 @@
         <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切换主题">🌙</button>
         <button class="theme-toggle" id="settingsBtn" onclick="openSettingsModal()" title="配置中心">⚙️</button>
       </div>
+    </div>
     </div>
 
     <!-- Add card -->
