@@ -2,12 +2,12 @@
 
 > 个人任务、进度、邮件提醒与 Markdown 笔记的本地化管理服务。
 
-一个面向个人使用与私有部署的待办服务：任务、进度、提醒和 Markdown 笔记保存在自己的设备上，也可以通过坚果云 WebDAV 做加密配置下的云端备份。
+一个面向个人使用与私有部署的待办服务：任务、进度、提醒和 Markdown 笔记保存在自己的设备上，也可以通过坚果云 WebDAV 做增量备份。备份对象只做 gzip 压缩和完整性校验，**不加密**。
 
 <p align="center">
   <a href="https://github.com/nerkeler/personal-todo-vault"><img src="https://img.shields.io/github/stars/nerkeler/personal-todo-vault?style=flat-square&logo=github" alt="GitHub stars"></a>
   <a href="https://github.com/nerkeler/personal-todo-vault/blob/main/LICENSE"><img src="https://img.shields.io/github/license/nerkeler/personal-todo-vault?style=flat-square" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 20 or newer">
+  <img src="https://img.shields.io/badge/Node.js-22%20LTS%20%7C%2024%20LTS-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 22 LTS or 24 LTS">
   <img src="https://img.shields.io/badge/SQLite-WASM-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite WASM">
 </p>
 
@@ -104,10 +104,10 @@ flowchart LR
 
 ## 快速开始
 
-需要 Node.js **20+** 和 npm：
+需要 Node.js **22 LTS 或 24 LTS**（Docker 默认使用 24 LTS）和 npm：
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_ACCOUNT/personal-todo-vault.git
+git clone https://github.com/nerkeler/personal-todo-vault.git
 cd personal-todo-vault
 npm ci
 npm start
@@ -152,6 +152,8 @@ TODO_DATA_DIR=/data npm run migrate
 
 坚果云同步仍由容器内的 Node 服务通过 HTTPS/WebDAV 执行；只要容器可以访问坚果云，且 `data/` 持久化，增量备份逻辑不变。不要删除这两个目录，也不要使用 `docker compose down -v`，除非确认要删除数据。
 
+容器使用 Node.js 24 LTS，并固定 `TZ=Asia/Shanghai`；提醒时间和日志时间以该时区为准。备份对象不加密，请按明文数据的隐私等级选择坚果云目录。
+
 ## 网络访问与安全
 
 ### 本机访问（推荐开发环境）
@@ -173,6 +175,16 @@ HOST=0.0.0.0 PORT=8238 npm start
 之后可使用服务器局域网 IP 加端口访问，例如 `http://<server-lan-ip>:8238/`。
 
 > 因为应用没有内置登录，局域网中能访问该地址的人都能读取和修改待办数据。需要跨网络访问时，请优先使用 Tailscale、WireGuard 等 VPN；或在 Nginx/Caddy 后增加 HTTPS 与身份验证。不要通过路由器端口映射直接公开服务。
+
+### HTTPS 反向代理来源
+
+Node 进程通常只看到代理与它之间的 HTTP 连接，因此不能用后端 socket 协议推断浏览器的 HTTPS 来源。反代部署时显式设置精确的 Origin 白名单（多个来源用英文逗号分隔）：
+
+```bash
+TODO_ALLOWED_ORIGINS=https://todo.example.com
+```
+
+只会放行白名单中的 `http://` 或 `https://` Origin；任意未列出的跨源请求都会被拒绝。不要把 `*`、路径、查询字符串或未经确认的用户输入放入该变量，也不要把 `X-Forwarded-Proto` 当作信任配置。直接通过 `http://局域网地址:8238` 访问时无需设置该变量。
 
 ## 部署
 
@@ -276,7 +288,7 @@ sudo systemctl restart personal-todo-vault
 ## 数据与安全
 
 - 数据保存在本机 SQLite 数据库和 `notes/<todo-id>.md` 文件中。
-- 坚果云备份采用 SHA-256 内容寻址、gzip 压缩和增量上传，并保留完整快照清单。
+- 坚果云备份采用 SHA-256 内容寻址、gzip 压缩和增量上传，并保留完整快照清单；备份对象**不加密**。
 - 应用没有内置登录；需要跨网络访问时，请使用 Tailscale / WireGuard，或在 Nginx / Caddy 后增加 HTTPS 和身份验证。
 - 不要提交 `todo.db`、`notes/*.md`、`backups/`、`config.local.*`、应用密码或 SMTP 授权码。
 
@@ -292,6 +304,19 @@ HOST=0.0.0.0 PORT=8238 npm start
 然后通过服务器局域网 IP 访问，例如 `http://192.168.1.20:8238/`。由于项目没有内置登录，能访问该地址的人都能读取和修改待办数据。
 
 </details>
+
+## 数据迁移与恢复
+
+- 坚果云备份提供增量上传与完整快照清单；备份对象是 gzip + SHA-256 校验格式，**不是加密备份**。
+- `restore.js` 会在隔离临时目录下载并校验每个对象的大小与 SHA-256，默认限制恢复的解压后总大小为 128 MiB，并拒绝覆盖已存在的目标目录。它不会恢复配置密钥：
+
+  ```bash
+  TODO_CONFIG_DIR=/config npm run restore -- --output-dir /data/restored-todo
+  # 可选：恢复指定快照
+  TODO_CONFIG_DIR=/config npm run restore -- --snapshot snapshots/<snapshot-id>.json --output-dir /data/restored-todo
+  ```
+
+  恢复目标的父目录必须已存在，而目标目录必须是全新的目录。完成后请先检查 `todo.db` 和 `notes/`，再停止当前服务并按需替换数据目录；配置请在新环境重新填写，或通过安全渠道单独迁移 `config.local.json` 与 `config.local.key`。可用 `TODO_RESTORE_MAX_BYTES`（字节数）调整恢复上限。
 
 <details>
 <summary>API 概览</summary>
@@ -322,7 +347,10 @@ HOST=0.0.0.0 PORT=8238 npm start
 
 ```bash
 npm run check
+npm run test:release
 ```
+
+`npm run test:release` 只使用本地临时目录、内存 WebDAV/SMTP 替身和 SQLite fixture，不会发送真实邮件或访问真实坚果云。
 
 ## License
 
