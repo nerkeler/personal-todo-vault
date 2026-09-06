@@ -11,6 +11,11 @@ const PROVIDER = 'jianguoyun';
 const DEFAULT_BACKUP_DIR = 'todo-app-backups';
 const DEFAULT_TIMEOUT_MS = 30000;
 const BACKUP_SCHEMA_VERSION = 2;
+const DEFAULT_MAX_RESTORE_BYTES = 128 * 1024 * 1024;
+const configuredRestoreLimit = Number(process.env.TODO_RESTORE_MAX_BYTES);
+const MAX_RESTORE_OBJECT_BYTES = Number.isSafeInteger(configuredRestoreLimit) && configuredRestoreLimit > 0
+  ? configuredRestoreLimit
+  : DEFAULT_MAX_RESTORE_BYTES;
 
 function getBackupConfig(extra = {}) {
   const patch = extra.webdav ? extra : { webdav: extra };
@@ -137,8 +142,14 @@ function buildSnapshot(paths, createdAt = new Date()) {
   };
 }
 
-function webdavRequest(method, targetUrl, config, body = null, headers = {}) {
+function webdavRequest(method, targetUrl, config, body = null, headers = {}, options = {}) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = error => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
     const parsed = new URL(targetUrl);
     const client = parsed.protocol === 'http:' ? http : https;
     const req = client.request({
@@ -154,17 +165,47 @@ function webdavRequest(method, targetUrl, config, body = null, headers = {}) {
       },
     }, res => {
       const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
+      let responseBytes = 0;
+      const failResponse = error => {
+        if (settled) return;
+        settled = true;
+        if (typeof res.resume === 'function') res.resume();
+        reject(error);
+      };
+      res.on('data', chunk => {
+        if (settled) return;
+        responseBytes += chunk.length;
+        if (options.maxResponseBytes && responseBytes > options.maxResponseBytes) {
+          failResponse(new Error(`WebDAV 响应过大：${options.maxResponseBytes} bytes`));
+          return;
+        }
+        chunks.push(chunk);
+      });
       res.on('end', () => {
-        const responseBody = Buffer.concat(chunks).toString('utf8');
+        if (settled) return;
+        settled = true;
+        const responseBuffer = Buffer.concat(chunks);
+        const responseBody = options.binary ? responseBuffer : responseBuffer.toString('utf8');
         resolve({ statusCode: res.statusCode, headers: res.headers, body: responseBody });
       });
+      res.on('error', error => failResponse(new Error(`WebDAV 响应中断：${error.message}`)));
+      res.on('aborted', () => failResponse(new Error(`WebDAV 响应被中止：${method} ${targetUrl}`)));
     });
     req.on('timeout', () => req.destroy(new Error(`WebDAV 请求超时：${method} ${targetUrl}`)));
-    req.on('error', reject);
+    req.on('error', fail);
     if (body !== null && body !== undefined) req.write(body);
     req.end();
   });
+}
+
+function safeRemotePath(value, label = '远程路径') {
+  const relativePath = String(value || '').replace(/^\/+|\/+$/g, '');
+  const parts = relativePath.split('/');
+  if (!relativePath || relativePath.length > 500 || relativePath.includes('\\') ||
+      parts.some(part => !part || part === '.' || part === '..')) {
+    throw new Error(`${label}无效：${value}`);
+  }
+  return relativePath;
 }
 
 async function ensureRemoteDirs(config, directories = [config.backupDir]) {
@@ -193,6 +234,9 @@ async function remoteExists(config, relativePath) {
 
 async function putObjectIfMissing(config, relativePath, body, contentType) {
   if (await remoteExists(config, relativePath)) {
+    if (!(await remoteObjectMatches(config, relativePath, body))) {
+      throw new Error(`远程备份对象已存在但内容无法校验：${relativePath}`);
+    }
     return { uploaded: false, reused: true, bytes: 0 };
   }
   const res = await webdavRequest(
@@ -205,12 +249,27 @@ async function putObjectIfMissing(config, relativePath, body, contentType) {
   if (![200, 201, 204, 409].includes(res.statusCode)) {
     throw new Error(`上传备份对象失败（HTTP ${res.statusCode}）：${relativePath} ${res.body.slice(0, 160)}`);
   }
-  // 409 can happen if another process uploaded the same content-addressed object first.
-  return { uploaded: res.statusCode !== 409, reused: res.statusCode === 409, bytes: res.statusCode === 409 ? 0 : body.length };
+  if (res.statusCode === 409) {
+    // A concurrent WebDAV create may return 409. Do not treat HEAD/409 as
+    // proof that the object is complete; reuse only after hash-validating it.
+    if (!(await remoteObjectMatches(config, relativePath, body))) {
+      throw new Error(`上传备份对象冲突且远程内容不匹配：${relativePath}`);
+    }
+    return { uploaded: false, reused: true, bytes: 0 };
+  }
+  return { uploaded: true, reused: false, bytes: body.length };
 }
 
 async function getRemoteJson(config, relativePath) {
-  const res = await webdavRequest('GET', joinUrl(config.baseUrl, config.backupDir, relativePath), config);
+  const safePath = safeRemotePath(relativePath, '远程清单路径');
+  const res = await webdavRequest(
+    'GET',
+    joinUrl(config.baseUrl, config.backupDir, safePath),
+    config,
+    null,
+    {},
+    { maxResponseBytes: MAX_RESTORE_OBJECT_BYTES },
+  );
   if (res.statusCode === 404) return null;
   if (res.statusCode !== 200) {
     throw new Error(`读取远程清单失败（HTTP ${res.statusCode}）：${relativePath}`);
@@ -219,6 +278,201 @@ async function getRemoteJson(config, relativePath) {
     return JSON.parse(res.body);
   } catch (e) {
     throw new Error(`远程清单格式无效：${relativePath}`);
+  }
+}
+
+async function getRemoteBuffer(config, relativePath) {
+  const safePath = safeRemotePath(relativePath, '远程对象路径');
+  const res = await webdavRequest(
+    'GET',
+    joinUrl(config.baseUrl, config.backupDir, safePath),
+    config,
+    null,
+    {},
+    { binary: true, maxResponseBytes: MAX_RESTORE_OBJECT_BYTES },
+  );
+  if (res.statusCode === 404) return null;
+  if (res.statusCode !== 200) {
+    throw new Error(`读取远程备份对象失败（HTTP ${res.statusCode}）：${safePath}`);
+  }
+  if (!Buffer.isBuffer(res.body) || res.body.length > MAX_RESTORE_OBJECT_BYTES) {
+    throw new Error(`远程备份对象过大或格式无效：${safePath}`);
+  }
+  return res.body;
+}
+
+async function remoteObjectMatches(config, relativePath, localCompressed) {
+  if (!Buffer.isBuffer(localCompressed) || localCompressed.length > MAX_RESTORE_OBJECT_BYTES) {
+    throw new Error(`本地备份对象过大或格式无效：${relativePath}`);
+  }
+  const remoteBody = await getRemoteBuffer(config, relativePath);
+  if (!remoteBody) return false;
+  let localContent;
+  let remoteContent;
+  try {
+    localContent = zlib.gunzipSync(localCompressed, { maxOutputLength: MAX_RESTORE_OBJECT_BYTES });
+    remoteContent = zlib.gunzipSync(remoteBody, { maxOutputLength: MAX_RESTORE_OBJECT_BYTES });
+  } catch (e) {
+    throw new Error(`远程备份对象无法校验：${relativePath}（${e.message}）`);
+  }
+  return localContent.length === remoteContent.length && sha256(localContent) === sha256(remoteContent);
+}
+
+function validHash(value) {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+}
+
+function validateRestoreManifest(manifest) {
+  if (!manifest || manifest.type !== 'snapshot' || manifest.schemaVersion !== BACKUP_SCHEMA_VERSION) {
+    throw new Error(`不支持的备份清单版本：${manifest?.schemaVersion ?? '未知'}`);
+  }
+  const database = manifest.database;
+  if (!database || !validHash(database.hash) ||
+      database.objectPath !== `objects/database/${database.hash}.db.gz`) {
+    throw new Error('备份清单中的数据库对象校验信息无效');
+  }
+  if (!Number.isSafeInteger(database.size) || database.size < 0) {
+    throw new Error('备份清单中的数据库大小无效');
+  }
+  if (database.size > MAX_RESTORE_OBJECT_BYTES) {
+    throw new Error(`数据库对象超过恢复大小上限：${MAX_RESTORE_OBJECT_BYTES} bytes`);
+  }
+  if (!Array.isArray(manifest.notes)) throw new Error('备份清单中的笔记列表无效');
+  const noteNames = new Set();
+  for (const note of manifest.notes) {
+    if (!note || typeof note.name !== 'string' || note.name.length > 255 ||
+        path.basename(note.name) !== note.name || note.name === '.' || note.name === '..' ||
+        !note.name.endsWith('.md') || noteNames.has(note.name)) {
+      throw new Error(`备份清单中的笔记文件名无效：${note?.name ?? ''}`);
+    }
+    if (!validHash(note.hash) || note.objectPath !== `objects/notes/${note.hash}.md.gz`) {
+      throw new Error(`备份清单中的笔记对象校验信息无效：${note.name}`);
+    }
+    if (!Number.isSafeInteger(note.size) || note.size < 0) {
+      throw new Error(`备份清单中的笔记大小无效：${note.name}`);
+    }
+    if (note.size > MAX_RESTORE_OBJECT_BYTES) {
+      throw new Error(`笔记对象超过恢复大小上限：${note.name}`);
+    }
+    noteNames.add(note.name);
+  }
+  const totalSize = database.size + manifest.notes.reduce((sum, note) => sum + note.size, 0);
+  if (!Number.isSafeInteger(totalSize) || totalSize > MAX_RESTORE_OBJECT_BYTES) {
+    throw new Error(`备份清单总大小超过恢复上限：${MAX_RESTORE_OBJECT_BYTES} bytes`);
+  }
+  return manifest;
+}
+
+async function downloadVerifiedObject(config, descriptor, label) {
+  const compressed = await getRemoteBuffer(config, descriptor.objectPath);
+  if (!compressed) throw new Error(`找不到远程${label}：${descriptor.objectPath}`);
+  let content;
+  try {
+    content = zlib.gunzipSync(compressed, { maxOutputLength: MAX_RESTORE_OBJECT_BYTES });
+  } catch (e) {
+    throw new Error(`远程${label}解压失败：${e.message}`);
+  }
+  if (content.length !== descriptor.size || sha256(content) !== descriptor.hash) {
+    throw new Error(`远程${label}校验失败：${descriptor.objectPath}`);
+  }
+  return content;
+}
+
+function assertNewRestoreDirectory(outputDir) {
+  const resolved = path.resolve(outputDir || '');
+  if (!outputDir || resolved === path.parse(resolved).root) {
+    throw new Error('恢复目标必须是一个明确的非根目录路径');
+  }
+  const parent = path.dirname(resolved);
+  if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
+    throw new Error(`恢复目标的父目录不存在：${parent}`);
+  }
+  try {
+    fs.lstatSync(resolved);
+    throw new Error(`恢复目标已存在，为避免覆盖请换一个目录：${resolved}`);
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+  return resolved;
+}
+
+function publishRestoreDirectory(stageDir, outputDir) {
+  const resolved = assertNewRestoreDirectory(outputDir);
+  try {
+    // mkdir is the exclusive second check. Unlike rename(stage, target), it
+    // cannot replace a directory that appeared after the first check.
+    fs.mkdirSync(resolved, { mode: 0o700 });
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      throw new Error(`恢复目标已存在，为避免覆盖请换一个目录：${resolved}`);
+    }
+    throw e;
+  }
+
+  const targetNotesDir = path.join(resolved, 'notes');
+  fs.mkdirSync(targetNotesDir, { mode: 0o700 });
+  fs.copyFileSync(
+    path.join(stageDir, 'todo.db'),
+    path.join(resolved, 'todo.db'),
+    fs.constants.COPYFILE_EXCL,
+  );
+  fs.chmodSync(path.join(resolved, 'todo.db'), 0o600);
+  for (const name of fs.readdirSync(path.join(stageDir, 'notes'))) {
+    const source = path.join(stageDir, 'notes', name);
+    const target = path.join(targetNotesDir, name);
+    fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
+    fs.chmodSync(target, 0o600);
+  }
+  fs.rmSync(stageDir, { recursive: true, force: true });
+}
+
+async function restoreBackup(config = getBackupConfig(), options = {}) {
+  if (!config.configured) throw new Error('坚果云 WebDAV 未配置完整，请填写账号和应用密码');
+  const outputDir = assertNewRestoreDirectory(options.outputDir);
+  const requestedSnapshot = options.snapshot || 'latest';
+  let snapshotPath = requestedSnapshot;
+  let latest = null;
+  if (requestedSnapshot === 'latest') {
+    latest = await getRemoteJson(config, 'latest.json');
+    if (!latest || typeof latest.snapshotPath !== 'string') {
+      throw new Error('远程 latest.json 不存在或缺少 snapshotPath');
+    }
+    snapshotPath = safeRemotePath(latest.snapshotPath, '快照路径');
+  } else {
+    snapshotPath = safeRemotePath(requestedSnapshot, '快照路径');
+  }
+  const manifest = validateRestoreManifest(await getRemoteJson(config, snapshotPath));
+  if (latest?.databaseHash && latest.databaseHash !== manifest.database.hash) {
+    throw new Error('latest.json 与快照中的数据库哈希不一致');
+  }
+
+  const parent = path.dirname(outputDir);
+  const stageDir = fs.mkdtempSync(path.join(parent, `.${path.basename(outputDir)}.restore-`));
+  try {
+    const database = await downloadVerifiedObject(config, manifest.database, '数据库对象');
+    fs.writeFileSync(path.join(stageDir, 'todo.db'), database, { mode: 0o600 });
+    const notesDir = path.join(stageDir, 'notes');
+    fs.mkdirSync(notesDir, { mode: 0o700 });
+    for (const note of manifest.notes) {
+      const content = await downloadVerifiedObject(config, note, `笔记对象 ${note.name}`);
+      fs.writeFileSync(path.join(notesDir, note.name), content, { mode: 0o600 });
+    }
+    // The target is created only after every object has passed its hash check.
+    // Exclusive mkdir/copy operations prevent replacing a target that appears
+    // between the initial and final existence checks.
+    publishRestoreDirectory(stageDir, outputDir);
+    return {
+      success: true,
+      outputDir,
+      snapshotPath,
+      snapshotId: manifest.snapshotId,
+      databaseHash: manifest.database.hash,
+      noteCount: manifest.notes.length,
+      createdAt: manifest.createdAt,
+    };
+  } catch (e) {
+    try { fs.rmSync(stageDir, { recursive: true, force: true }); } catch (_) {}
+    throw e;
   }
 }
 
@@ -350,4 +604,5 @@ module.exports = {
   publicBackupStatus,
   testBackupConfig,
   uploadBackup,
+  restoreBackup,
 };

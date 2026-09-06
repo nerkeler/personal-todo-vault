@@ -27,6 +27,27 @@ if (fs.existsSync('/etc/environment')) {
   });
 }
 
+function normalizeHttpOrigin(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password ||
+        parsed.pathname !== '/' || parsed.search || parsed.hash) return null;
+    return parsed.origin;
+  } catch (_) {
+    return null;
+  }
+}
+
+// A reverse proxy terminates HTTPS before the Node process sees the request.
+// Trust only explicitly configured public origins; never infer them from
+// X-Forwarded-Proto or another client-controlled header.
+const ALLOWED_ORIGINS = new Set(
+  String(process.env.TODO_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(normalizeHttpOrigin)
+    .filter(Boolean),
+);
+
 // ── 加载模块 ─────────────────────────────────────────────
 const { initDB, closeDB, saveDB,
   getCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
@@ -43,8 +64,21 @@ const MIME = {
   '.js': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.wasm': 'application/wasm',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
 };
+
+// Only these files are part of the browser client. Runtime data and source
+// files must never be reachable through the static file handler.
+const PUBLIC_FILES = Object.freeze({
+  '/': 'index.html',
+  '/index.html': 'index.html',
+  '/USAGE.md': 'USAGE.md',
+  '/sql-wasm.js': 'sql-wasm.js',
+  '/sql-wasm.wasm': 'sql-wasm.wasm',
+});
+const PUBLIC_ROOT = path.resolve(__dirname);
+const REMINDER_GRACE_MS = 90 * 1000;
 
 // ── 预设图标 ─────────────────────────────────────────────
 const PRESET_ICONS = [
@@ -92,6 +126,28 @@ function wasReminderSentOnLocalDate(value, date) {
   if (!value) return false;
   const sentAt = new Date(value);
   return !Number.isNaN(sentAt.getTime()) && localDateKey(sentAt) === localDateKey(date);
+}
+
+function reminderScheduleAt(todo, date) {
+  if (!isValidTime(todo.reminderTime)) return null;
+  const [hours, minutes] = todo.reminderTime.split(':').map(Number);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0);
+}
+
+function isReminderDue(todo, now) {
+  const scheduledAt = reminderScheduleAt(todo, now);
+  if (!scheduledAt) return false;
+  const elapsed = now.getTime() - scheduledAt.getTime();
+  return elapsed >= 0 && elapsed <= REMINDER_GRACE_MS;
+}
+
+function sameReminderConfiguration(left, right) {
+  return !!left?.reminderEnabled === !!right?.reminderEnabled &&
+    (left?.reminderTime || '') === (right?.reminderTime || '') &&
+    (left?.reminderMode || 'once') === (right?.reminderMode || 'once') &&
+    Number(left?.reminderRepeatCount || 1) === Number(right?.reminderRepeatCount || 1) &&
+    JSON.stringify(normalizeReminderWeekdays(left?.reminderWeekdays)) ===
+      JSON.stringify(normalizeReminderWeekdays(right?.reminderWeekdays));
 }
 
 function findTodo(id) {
@@ -482,15 +538,53 @@ function cleanSettingsPatch(payload = {}) {
   return patch;
 }
 
+function isSameOriginRequest(req) {
+  const origin = req.headers?.origin;
+  if (!origin) return true;
+  if (origin === 'null') return false;
+  const host = req.headers?.host;
+  if (!host) return false;
+  try {
+    const normalizedOrigin = normalizeHttpOrigin(origin);
+    if (!normalizedOrigin) return false;
+    if (ALLOWED_ORIGINS.has(normalizedOrigin)) return true;
+    const protocol = req.socket?.encrypted ? 'https:' : 'http:';
+    return normalizedOrigin === normalizeHttpOrigin(`${protocol}//${host}`);
+  } catch (_) {
+    return false;
+  }
+}
+
+function publicFilePath(pathname) {
+  const relativePath = PUBLIC_FILES[pathname];
+  if (!relativePath) return null;
+  const filePath = path.resolve(PUBLIC_ROOT, relativePath);
+  if (filePath !== PUBLIC_ROOT && !filePath.startsWith(`${PUBLIC_ROOT}${path.sep}`)) return null;
+  return filePath;
+}
+
 // ── HTTP 服务器 ──────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
-
   const parsed = url.parse(req.url, true);
   const pathname = parsed.pathname;
+  const isApiPath = pathname === '/api' || pathname.startsWith('/api/');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  if (req.headers?.origin) res.setHeader('Vary', 'Origin');
+  if (isApiPath && !isSameOriginRequest(req)) {
+    jsonRes(res, { error: '仅允许同源请求' }, 403);
+    return;
+  }
+  if (req.method === 'OPTIONS') {
+    if (isApiPath && req.headers?.origin) {
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    }
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   const jsonResR = (data, code = 200) => jsonRes(res, data, code);
   const withBody = async (callback, maxBytes = MAX_JSON_BODY_BYTES) => {
     let body = '';
@@ -575,8 +669,7 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/api/backup/run' && req.method === 'POST') {
     try {
-      saveDB();
-      const result = await uploadBackup(BACKUP_PATHS, getBackupConfig());
+      const result = await runBackup();
       lastBackup = result;
       jsonResR(result);
     } catch (e) {
@@ -750,8 +843,9 @@ const server = http.createServer(async (req, res) => {
           if (updates.reminderSentCount !== undefined) kw.reminderSentCount = Math.max(0, Number(updates.reminderSentCount) || 0);
           if (updates.reminderLastSentAt !== undefined) kw.reminderLastSentAt = cleanString(updates.reminderLastSentAt, 80);
           if (updates.creatorEmail !== undefined) kw.creatorEmail = updates.creatorEmail.trim();
-          const effectiveMode = kw.reminderMode || currentTodo.reminderMode || 'once';
-          const effectiveWeekdays = kw.reminderWeekdays || currentTodo.reminderWeekdays || [];
+          const effectiveMode = kw.reminderMode !== undefined ? kw.reminderMode : (currentTodo.reminderMode || 'once');
+          const effectiveWeekdays = kw.reminderWeekdays !== undefined ? kw.reminderWeekdays : (currentTodo.reminderWeekdays || []);
+          const effectiveRepeatCount = kw.reminderRepeatCount !== undefined ? kw.reminderRepeatCount : (currentTodo.reminderRepeatCount || 1);
           const completing = updates.completed === true || (updates.completed === undefined && updates.progress === 100);
           const effectiveEnabled = completing
             ? false
@@ -763,8 +857,20 @@ const server = http.createServer(async (req, res) => {
           if (effectiveEnabled && ['weekly', 'count'].includes(effectiveMode) && effectiveWeekdays.length === 0) {
             jsonResR({ error: '每周重复或重复次数提醒至少选择一个星期' }, 400); return;
           }
-          // 重新开启提醒或更换提醒规则时，从第 1 次重新计数。
-          if ((kw.reminderEnabled === true && !currentTodo.reminderEnabled) || updates.reminderMode !== undefined || updates.reminderWeekdays !== undefined || updates.reminderRepeatCount !== undefined) {
+          const reminderFieldsTouched = ['reminderEnabled', 'reminderTime', 'reminderMode', 'reminderWeekdays', 'reminderRepeatCount']
+            .some(key => updates[key] !== undefined);
+          const reminderRuleChanged = reminderFieldsTouched && (
+            !!effectiveEnabled !== !!currentTodo.reminderEnabled ||
+            (effectiveTime || '') !== (currentTodo.reminderTime || '') ||
+            effectiveMode !== (currentTodo.reminderMode || 'once') ||
+            Number(effectiveRepeatCount || 1) !== Number(currentTodo.reminderRepeatCount || 1) ||
+            JSON.stringify(normalizeReminderWeekdays(effectiveWeekdays)) !==
+              JSON.stringify(normalizeReminderWeekdays(currentTodo.reminderWeekdays))
+          );
+          // Reset only when the effective rule really changed. The settings
+          // form sends the complete rule on every save, so checking field
+          // presence would incorrectly erase the sent count on a no-op save.
+          if (reminderRuleChanged) {
             kw.reminderSentCount = 0;
             kw.reminderLastSentAt = '';
           }
@@ -817,68 +923,92 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ── 静态文件 ─────────────────────────────────────────
-  let filePath = pathname === '/' ? '/index.html' : pathname;
-  filePath = path.join(__dirname, filePath);
+  if (!['GET', 'HEAD'].includes(req.method)) {
+    jsonResR({ error: 'Not found' }, 404);
+    return;
+  }
+  const filePath = publicFilePath(pathname);
+  if (!filePath) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
+    return;
+  }
   const ext = path.extname(filePath);
   const mime = MIME[ext] || 'text/plain';
   fs.readFile(filePath, (err, content) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
-    res.writeHead(200, { 'Content-Type': mime }); res.end(content);
+    res.writeHead(200, { 'Content-Type': mime, 'Content-Length': content.length });
+    res.end(req.method === 'HEAD' ? undefined : content);
   });
 });
 
 // ── Cron（每分钟检查任务提醒）────────────────────────────
 let cronTimer = null;
+const reminderInFlight = new Set();
 
 function stopCron() {
   if (cronTimer) { clearInterval(cronTimer); cronTimer = null; console.log('[CRON] stopped'); }
 }
 
-function startCron() {
-  stopCron();
-  cronTimer = setInterval(async () => {
-    try {
-      const emailConfig = getFullConfig().email;
-      if (!emailConfig.enabled || !isEmailConfigured(emailConfig)) return;
-      const now = new Date();
-      const curTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-      const weekday = isoWeekday(now);
-      const todos = getTodos();
-      for (const todo of todos) {
-        if (todo.completed || !todo.reminderEnabled || !todo.reminderTime) continue;
-        if (todo.reminderTime !== curTime) continue;
-        // 防止服务重启或定时器抖动导致同一天重复发送。
-        if (wasReminderSentOnLocalDate(todo.reminderLastSentAt, now)) continue;
-        const mode = REMINDER_MODES.has(todo.reminderMode) ? todo.reminderMode : 'once';
-        if (mode !== 'once' && !todo.reminderWeekdays.includes(weekday)) continue;
-        if (mode === 'count' && todo.reminderSentCount >= todo.reminderRepeatCount) {
-          updateTodo(todo.id, { reminderEnabled: false });
+async function runReminderTick() {
+  try {
+    const emailConfig = getFullConfig().email;
+    if (!emailConfig.enabled || !isEmailConfigured(emailConfig)) return;
+    const now = new Date();
+    const weekday = isoWeekday(now);
+    const todos = getTodos();
+    for (const todo of todos) {
+      if (todo.completed || !todo.reminderEnabled || !todo.reminderTime) continue;
+      // Check a short grace window so timer startup/jitter does not silently
+      // lose a reminder, while avoiding broad catch-up after a long outage.
+      if (!isReminderDue(todo, now)) continue;
+      if (wasReminderSentOnLocalDate(todo.reminderLastSentAt, now)) continue;
+      const mode = REMINDER_MODES.has(todo.reminderMode) ? todo.reminderMode : 'once';
+      if (mode !== 'once' && !todo.reminderWeekdays.includes(weekday)) continue;
+      if (mode === 'count' && todo.reminderSentCount >= todo.reminderRepeatCount) {
+        updateTodo(todo.id, { reminderEnabled: false });
+        continue;
+      }
+      const recipient = todo.creatorEmail || emailConfig.recipients;
+      if (!recipient || reminderInFlight.has(todo.id)) continue;
+      reminderInFlight.add(todo.id);
+      try {
+        const reminderEmail = buildReminderEmail(todo, mode);
+        await sendEmail(
+          recipient,
+          `📋 任务提醒：${todo.title}`,
+          reminderEmail.text,
+          { email: emailConfig, html: reminderEmail.html }
+        );
+
+        // Re-read after SMTP returns. Completion, manual disable, or a rule
+        // edit made while sending must win over this old snapshot.
+        const current = findTodo(todo.id);
+        if (!current || current.completed || !current.reminderEnabled ||
+            !sameReminderConfiguration(current, todo)) {
           continue;
         }
-        const recipient = todo.creatorEmail || emailConfig.recipients;
-        if (!recipient) continue;
-        try {
-          const reminderEmail = buildReminderEmail(todo, mode);
-          await sendEmail(
-            recipient,
-            `📋 任务提醒：${todo.title}`,
-            reminderEmail.text,
-            { email: emailConfig, html: reminderEmail.html }
-          );
-          const sentCount = todo.reminderSentCount + 1;
-          const finished = mode === 'once' || (mode === 'count' && sentCount >= todo.reminderRepeatCount);
-          updateTodo(todo.id, {
-            reminderEnabled: !finished,
-            reminderSentCount: sentCount,
-            reminderLastSentAt: now.toISOString(),
-          });
-          console.log(`[REMINDER] sent: ${todo.id} (${mode}, ${sentCount}${mode === 'count' ? `/${todo.reminderRepeatCount}` : ''})`);
-        } catch (e) {
-          console.error(`[REMINDER] Failed: ${e.message}`);
-        }
+        const sentCount = current.reminderSentCount + 1;
+        const finished = mode === 'once' || (mode === 'count' && sentCount >= current.reminderRepeatCount);
+        updateTodo(current.id, {
+          reminderEnabled: !finished,
+          reminderSentCount: sentCount,
+          reminderLastSentAt: new Date().toISOString(),
+        });
+        console.log(`[REMINDER] sent: ${current.id} (${mode}, ${sentCount}${mode === 'count' ? `/${current.reminderRepeatCount}` : ''})`);
+      } catch (e) {
+        console.error(`[REMINDER] Failed: ${e.message}`);
+      } finally {
+        reminderInFlight.delete(todo.id);
       }
-    } catch (e) { console.error('[CRON] error:', e.message); }
-  }, 60 * 1000);
+    }
+  } catch (e) { console.error('[CRON] error:', e.message); }
+}
+
+function startCron() {
+  stopCron();
+  runReminderTick().catch(e => console.error('[CRON] initial check error:', e.message));
+  cronTimer = setInterval(runReminderTick, 60 * 1000);
   console.log('[CRON] started');
 }
 
@@ -886,6 +1016,7 @@ function startCron() {
 // ── Cloud backup timer ───────────────────────────────────
 let backupTimer = null;
 let lastBackup = null;
+let backupInFlight = null;
 
 function stopBackupTimer() {
   if (backupTimer) { clearInterval(backupTimer); backupTimer = null; console.log('[BACKUP] stopped'); }
@@ -898,8 +1029,7 @@ function startBackupTimer() {
   const intervalMs = config.intervalHours * 60 * 60 * 1000;
   backupTimer = setInterval(async () => {
     try {
-      saveDB();
-      lastBackup = await uploadBackup(BACKUP_PATHS, getBackupConfig());
+      lastBackup = await runBackup();
       console.log(`[BACKUP] uploaded: ${lastBackup.remotePath}`);
     } catch (e) {
       lastBackup = { success: false, error: e.message, createdAt: new Date().toISOString() };
@@ -907,6 +1037,19 @@ function startBackupTimer() {
     }
   }, intervalMs);
   console.log(`[BACKUP] auto enabled: every ${config.intervalHours}h`);
+}
+
+async function runBackup() {
+  if (backupInFlight) return backupInFlight;
+  backupInFlight = (async () => {
+    saveDB();
+    return uploadBackup(BACKUP_PATHS, getBackupConfig());
+  })();
+  try {
+    return await backupInFlight;
+  } finally {
+    backupInFlight = null;
+  }
 }
 
 // ── 启动 ─────────────────────────────────────────────────
