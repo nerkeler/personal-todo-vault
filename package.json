@@ -1,13 +1,15 @@
 {
   "dependencies": {
-    "nodemailer": "^6.9.0"
+    "nodemailer": "^10.0.0"
   },
   "scripts": {
     "start": "node server.js",
     "migrate": "node migrate.js",
+    "restore": "node restore.js",
+    "test:release": "node test/release-regression.cjs",
     "check": "node --check server.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }

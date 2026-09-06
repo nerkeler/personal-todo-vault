@@ -8,6 +8,7 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 8238
+      TZ: Asia/Shanghai
       TODO_DATA_DIR: /data
       TODO_NOTES_DIR: /data/notes
       TODO_BACKUP_DIR: /data/backups

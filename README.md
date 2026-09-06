@@ -1,6 +1,6 @@
-# Personal Todo Vault
+# TODO App
 
-一个面向**个人使用与私有部署**的待办事项服务：待办、进度、提醒和 Markdown 笔记保存在你自己的设备上；可选地通过坚果云 WebDAV 做加密配置下的云端备份。项目使用原生 Node.js HTTP 服务与 SQLite（sql.js），不依赖前端框架或外部 SaaS。
+一个面向**个人使用与私有部署**的待办事项服务：待办、进度、提醒和 Markdown 笔记保存在你自己的设备上；可选地通过坚果云 WebDAV 做增量备份。项目使用原生 Node.js HTTP 服务与 SQLite（sql.js），不依赖前端框架或外部 SaaS。
 
 > [!WARNING]
 > 本项目目前**没有登录、权限管理或多用户隔离机制**。请只部署在可信的本机、局域网、VPN 或已由反向代理提供身份验证的网络中；**不要直接将端口暴露到公网**。
@@ -11,7 +11,7 @@
 - **个人优先、数据在自己手里**：运行数据是本机 SQLite 数据库和 Markdown 文件；无需注册第三方账户，也不把待办上传到应用服务商。
 - **为长期事项设计的进度与提醒**：支持 0–100% 进度，达到 100% 自动完成；提醒可单次、每周指定星期持续重复，或按指定次数重复。
 - **安全的配置中心**：邮件和坚果云设置均在页面中保存、测试；密码不会回显，保存时使用 AES-256-GCM 加密，密钥与配置文件均不进入 Git。
-- **适合自托管的云端备份**：数据库和每份 Markdown 笔记分别进行 SHA-256 内容寻址、gzip 压缩和增量上传；每次备份保留完整快照清单，不是简单覆盖一个压缩包。
+- **适合自托管的云端备份**：数据库和每份 Markdown 笔记分别进行 SHA-256 内容寻址、gzip 压缩和增量上传；每次备份保留完整快照清单，不是简单覆盖一个压缩包。备份对象经过压缩和完整性校验，**不加密**，请按明文数据的隐私等级选择云端目录。
 - **低依赖、便于私有部署**：原生 HTML/CSS/JavaScript + Node.js 原生 HTTP + SQLite WASM，部署和迁移简单。
 
 ## 功能一览
@@ -43,12 +43,12 @@
 
 ### 要求
 
-- Node.js **20 或更高版本**
+- Node.js **22 LTS 或 24 LTS**（Docker 默认使用 24 LTS）
 - npm
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_ACCOUNT/personal-todo-vault.git
-cd personal-todo-vault
+git clone https://github.com/nerkeler/todo-app.git
+cd todo-app
 npm ci
 npm start
 ```
@@ -84,6 +84,8 @@ docker compose up -d --build
 
 坚果云同步仍由容器内的 Node 服务通过 HTTPS/WebDAV 执行；只要容器可以访问坚果云，且 `data/` 持久化，增量备份逻辑不变。不要删除这两个目录，也不要使用 `docker compose down -v`，除非确认要删除数据。
 
+容器使用 Node.js 24 LTS，并固定 `TZ=Asia/Shanghai`；提醒时间和日志时间以该时区为准。若通过 HTTPS 反向代理访问，请在 Compose 环境中加入精确的公开来源，例如 `TODO_ALLOWED_ORIGINS=https://todo.example.com`，并让代理保留 `Host`。服务不会无条件信任 `X-Forwarded-Proto`。
+
 ## 网络访问与安全
 
 ### 本机访问（推荐开发环境）
@@ -106,6 +108,16 @@ HOST=0.0.0.0 PORT=8238 npm start
 
 > 因为应用没有内置登录，局域网中能访问该地址的人都能读取和修改待办数据。需要跨网络访问时，请优先使用 Tailscale、WireGuard 等 VPN；或在 Nginx/Caddy 后增加 HTTPS 与身份验证。不要通过路由器端口映射直接公开服务。
 
+### HTTPS 反向代理来源
+
+Node 进程通常只看到代理与它之间的 HTTP 连接，因此不能用后端 socket 协议推断浏览器的 HTTPS 来源。反代部署时显式设置精确的 Origin 白名单（多个来源用英文逗号分隔）：
+
+```bash
+TODO_ALLOWED_ORIGINS=https://todo.example.com
+```
+
+只会放行白名单中的 `http://` 或 `https://` Origin；任意未列出的跨源请求都会被拒绝。不要把 `*`、路径、查询字符串或未经确认的用户输入放入该变量，也不要把 `X-Forwarded-Proto` 当作信任配置。直接通过 `http://局域网地址:8238` 访问时无需设置该变量。
+
 ## 部署
 
 ### 方式一：直接运行
@@ -113,7 +125,7 @@ HOST=0.0.0.0 PORT=8238 npm start
 适合开发、个人电脑或已有进程守护工具的环境：
 
 ```bash
-cd /path/to/personal-todo-vault
+cd /path/to/todo-app
 npm ci
 HOST=0.0.0.0 PORT=8238 npm start
 ```
@@ -123,28 +135,29 @@ HOST=0.0.0.0 PORT=8238 npm start
 1. 将项目放到专用目录，并安装依赖：
 
    ```bash
-   sudo mkdir -p /opt/personal-todo-vault
-   sudo chown "$USER":"$USER" /opt/personal-todo-vault
-   git clone https://github.com/YOUR_GITHUB_ACCOUNT/personal-todo-vault.git /opt/personal-todo-vault
-   cd /opt/personal-todo-vault
+   sudo mkdir -p /opt/todo-app
+   sudo chown "$USER":"$USER" /opt/todo-app
+   git clone https://github.com/nerkeler/todo-app.git /opt/todo-app
+   cd /opt/todo-app
    npm ci
    ```
 
-2. 创建 `/etc/systemd/system/personal-todo-vault.service`：
+2. 创建 `/etc/systemd/system/todo-app.service`：
 
    ```ini
    [Unit]
-   Description=Personal Todo Vault
+   Description=TODO App
    After=network.target
 
    [Service]
    Type=simple
    User=YOUR_LINUX_USER
-   WorkingDirectory=/opt/personal-todo-vault
+   WorkingDirectory=/opt/todo-app
    Environment=NODE_ENV=production
    Environment=HOST=127.0.0.1
    Environment=PORT=8238
-   ExecStart=/usr/bin/node /opt/personal-todo-vault/server.js
+   Environment=TZ=Asia/Shanghai
+   ExecStart=/usr/bin/node /opt/todo-app/server.js
    Restart=on-failure
    RestartSec=5
 
@@ -158,15 +171,15 @@ HOST=0.0.0.0 PORT=8238 npm start
 
    ```bash
    sudo systemctl daemon-reload
-   sudo systemctl enable --now personal-todo-vault
-   sudo systemctl status personal-todo-vault
+   sudo systemctl enable --now todo-app
+   sudo systemctl status todo-app
    ```
 
 4. 常用运维命令：
 
    ```bash
-   sudo systemctl restart personal-todo-vault
-   sudo journalctl -u personal-todo-vault -f
+   sudo systemctl restart todo-app
+   sudo journalctl -u todo-app -f
    ```
 
 ### 更新部署
@@ -174,10 +187,10 @@ HOST=0.0.0.0 PORT=8238 npm start
 先在页面执行一次云端或本地备份，再更新代码：
 
 ```bash
-cd /opt/personal-todo-vault
+cd /opt/todo-app
 git pull --ff-only
 npm ci
-sudo systemctl restart personal-todo-vault
+sudo systemctl restart todo-app
 ```
 
 运行数据、加密配置和本地备份目录已经在 `.gitignore` 中，不会被 `git pull` 覆盖。
@@ -231,6 +244,7 @@ todo-app-backups/
 - 每次备份生成一份完整快照清单；`latest.json` 指向最新快照。
 - 删除的笔记不会出现在最新快照中；历史快照和对象默认保留，便于保留历史版本。
 - 这是**单向备份**，不是双向同步。请不要直接在坚果云目录中编辑对象文件。
+- 备份对象只做 gzip 压缩和 SHA-256 完整性校验，**不提供加密**；坚果云目录中的数据库和 Markdown 内容应按明文敏感数据保护。
 - WebDAV 密码和本机配置密钥不会上传到坚果云。
 
 ## 数据与隐私
@@ -280,6 +294,7 @@ TODO_WEBDAV_PASSWORD=your-jianguoyun-app-password
 TODO_WEBDAV_BACKUP_DIR=todo-app-backups
 TODO_BACKUP_AUTO=false
 TODO_BACKUP_INTERVAL_HOURS=24
+TODO_RESTORE_MAX_BYTES=134217728
 ```
 
 可以复制 `.env.example` 作为自己的本地参考文件，但服务不会自动读取 `.env`；请通过 systemd `Environment=`、Shell 环境变量或其他进程管理工具注入。
@@ -295,7 +310,16 @@ TODO_BACKUP_INTERVAL_HOURS=24
 
 - 只有确认要重新生成数据库时才使用 `npm run migrate -- --force`；覆盖前会把原数据库备份到 `TODO_BACKUP_DIR`（默认 `/data/backups`）。
 - 脚本使用当前完整 SQLite 结构、校验源数据并原子写入；本地服务保存数据库时也采用临时文件、`fsync` 和原子替换，并保留最近 10 份滚动备份。
-- 坚果云备份目前提供增量上传与完整快照清单；恢复流程应根据快照清单取回相应数据库/笔记对象。执行恢复前，请先停止服务并备份现有运行目录。
+- 坚果云备份提供增量上传与完整快照清单；备份对象是 gzip + SHA-256 校验格式，**不是加密备份**。
+- 可执行恢复工具会在隔离临时目录下载并校验每个对象的大小与 SHA-256，默认限制恢复的解压后总大小为 128 MiB，并拒绝覆盖已存在的目标目录。它不会恢复配置密钥：
+
+  ```bash
+  TODO_CONFIG_DIR=/config npm run restore -- --output-dir /data/restored-todo
+  # 可选：恢复指定快照
+  TODO_CONFIG_DIR=/config npm run restore -- --snapshot snapshots/<snapshot-id>.json --output-dir /data/restored-todo
+  ```
+
+  恢复目标的父目录必须已存在，而目标目录必须是全新的目录。工具完成后请先检查 `todo.db` 和 `notes/`，再停止当前服务，将该目录作为新的 `TODO_DATA_DIR`/`TODO_NOTES_DIR` 使用；配置请在新环境重新填写，或通过安全渠道单独迁移 `config.local.json` 与 `config.local.key`。可用 `TODO_RESTORE_MAX_BYTES`（字节数）调整恢复上限，但不建议无理由放大。
 
 ## API 概览
 
@@ -321,13 +345,14 @@ TODO_BACKUP_INTERVAL_HOURS=24
 ## 项目结构
 
 ```text
-personal-todo-vault/
+todo-app/
 ├── appConfig.js       # 加密的本地配置读取、保存与脱敏输出
 ├── cloudBackup.js     # WebDAV 内容寻址增量备份
 ├── email.js           # SMTP 邮件与测试邮件
 ├── index.html         # 前端页面（原生 HTML/CSS/JS）
 ├── server.js          # HTTP API、提醒与备份定时器
 ├── sqlite.js          # SQLite 初始化、迁移与原子保存
+├── restore.js         # WebDAV 快照校验与新目录恢复工具
 ├── sql-wasm.*         # SQLite WASM 运行时
 ├── notes/.gitkeep     # 空笔记目录占位；真实笔记不提交
 ├── .env.example       # 不含秘密的环境变量示例
@@ -339,7 +364,10 @@ personal-todo-vault/
 
 ```bash
 npm run check
+npm run test:release
 ```
+
+`npm run test:release` 只使用本地临时目录、内存 WebDAV/SMTP 替身和 SQLite fixture，不会发送真实邮件或访问真实坚果云。
 
 ## 公开仓库约定
 
