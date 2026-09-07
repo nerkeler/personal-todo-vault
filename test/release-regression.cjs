@@ -232,6 +232,18 @@ async function testServer() {
     origin: 'null',
   })).status, 403, 'null Origin 应被拒绝');
 
+  const priorityCreated = await request(harness, 'POST', '/api/todos', {
+    title: 'priority regression',
+    categoryId: 'cat_default',
+  });
+  assert.equal(priorityCreated.status, 200);
+  assert.equal(priorityCreated.body.priority, 0, '新待办默认应为普通重要程度');
+  const priorityUpdated = await request(harness, 'PATCH', `/api/todos/${priorityCreated.body.id}`, { priority: 2 });
+  assert.equal(priorityUpdated.status, 200);
+  assert.equal(priorityUpdated.body.priority, 2, '待办应支持更新重要程度');
+  const invalidPriority = await request(harness, 'PATCH', `/api/todos/${priorityCreated.body.id}`, { priority: 3 });
+  assert.equal(invalidPriority.status, 400, '非法重要程度应被拒绝');
+
   const noOpId = await createReminderTodo(harness, 'no-op reminder', 'count', 4);
   db.updateTodo(noOpId, { reminderSentCount: 2, reminderLastSentAt: '' });
   const noOp = await request(harness, 'PATCH', `/api/todos/${noOpId}`, {
@@ -427,8 +439,38 @@ async function testFrontend() {
   const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]);
   assert(scripts.length > 0);
   new Function(scripts[scripts.length - 1]);
+  assert.doesNotMatch(html, /id="themeSettingsSection"[^>]*\bopen\b/, '配置分组默认不应展开');
+  assert.match(html, /resetSettingsDisclosure\(\)/, '打开配置中心前应重置为折叠状态');
+  assert.match(html, /class="todo-priority-tag priority-/, '待办应展示重要程度标签');
+  assert.match(html, /function togglePriorityDropdown\(/, '重要程度标签应提供选择浮层');
+  assert.match(html, /id="addPriorityBtn" onclick="toggleAddPriorityDropdown\(event\)"/, '新增待办应提供重要程度选择');
+  assert.match(html, /function setAddPriority\(/, '新增待办重要程度应可切换');
+  assert.match(html, /JSON\.stringify\(\{ title, categoryId, priority: selectedAddPriority \}\)/, '新增待办应提交重要程度');
+  assert.match(html, /class="todo-labels"[\s\S]*todo-cat-tag[\s\S]*priorityTagMarkup\(t\)[\s\S]*periodBadge/, '待办标签顺序应为分类、重要程度、时间范围');
+  assert.match(html, /class="todo-dates"[\s\S]*todo-date-created[\s\S]*todo-date-divider[\s\S]*todo-date-updated/, '创建和更新时间应归入独立信息组');
+  assert.match(html, /\.todo-priority-tag \{[\s\S]*width: 72px;[\s\S]*min-width: 72px;/, '重要程度标签应保持紧凑的统一宽度');
+  assert.match(html, /\.todo-cat-tag \{[\s\S]*min-width: 72px[\s\S]*height: 22px;/, '分类标签应与其他标签保持统一尺寸');
+  assert.match(html, /\.period-badge \{[\s\S]*min-width: 72px[\s\S]*height: 22px;/, '时间范围标签应与其他标签保持统一尺寸');
+  assert.match(html, /class="priority-dot priority-dot-\$\{meta\.className\}"/, '重要程度应统一使用颜色圆点');
+  assert.match(html, /\.todo-priority-tag \{[\s\S]*justify-content: center;/, '重要程度文字应在标签内居中');
+  assert.match(html, /\.todo-priority-tag \.priority-dot \{[\s\S]*position: absolute;/, '重要程度圆点不应影响文字居中');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.add-row \{[\s\S]*display: grid;[\s\S]*grid-template-columns: minmax\(0, 3fr\) minmax\(0, 3fr\) minmax\(0, 2fr\);[\s\S]*\.add-input \{ grid-column: 1 \/ -1;/, '移动端分类、重要程度和添加按钮应按 3:3:2 比例保持同一行');
+  assert.match(html, /\.cat-picker-btn #catPickerLabel \{[\s\S]*position: absolute;[\s\S]*inset: 0 24px 0 0;[\s\S]*justify-content: center;[\s\S]*gap: 6px;[\s\S]*padding: 0 12px;/, '分类按钮图标和文字应在箭头之外居中');
+  assert.match(html, /\.cat-picker-btn #catPickerLabel \.ui-icon \{[\s\S]*position: static;/, '分类图标应随文字一起居中');
+  assert.match(html, /\.cat-picker-btn \.arrow \{[\s\S]*position: absolute;[\s\S]*right: 12px;/, '分类下拉箭头应固定在右侧');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-meta \{[\s\S]*align-items: center;[\s\S]*flex-direction: row;[\s\S]*flex-wrap: nowrap;[\s\S]*overflow-x: auto;/, '移动端元信息应保持横向单行并垂直居中');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-labels \{[\s\S]*flex: 0 0 auto;[\s\S]*flex-wrap: nowrap;/, '移动端标签组应保持横向单行');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-dates \{[\s\S]*width: auto;[\s\S]*flex: 1 1 auto;[\s\S]*display: flex;[\s\S]*flex-direction: row;[\s\S]*align-items: center;[\s\S]*justify-content: flex-end;/, '移动端日期应与标签同排并保持中心线对齐');
+  assert.doesNotMatch(html, /meta\.symbol|symbol: '○'|symbol: '◆'|symbol: '!'/, '重要程度标签不应使用不同形状符号');
+  assert.match(html, /\.add-priority-btn\.priority-normal \{[\s\S]*background: var\(--bg\);/, '新增待办优先级选择器不应使用彩色背景');
+  assert.match(html, /\.add-priority-btn\.priority-normal \{[\s\S]*color: var\(--text\);/, '新增待办优先级文字应使用普通文本色');
+  assert.match(html, /\.add-priority-btn\.priority-normal \{[\s\S]*border-color: var\(--border\);/, '新增待办优先级选择器不应使用彩色边框');
+  assert.match(html, /\.todo-meta \{[\s\S]*width: calc\(100% \+ var\(--todo-action-space\) \+ 10px\)/, '日期信息组应延伸到卡片右侧');
+  assert.match(html, /\.todo-actions \{[\s\S]*width: var\(--todo-action-space\)/, '操作区应保留固定占位避免内容抖动');
   assert.match(html, /\.todo-item\.editing \.todo-actions \{ visibility: hidden;/);
   assert.match(html, /todo-title-placeholder/);
+  assert.match(html, /\.todo-title-editor \{[\s\S]*font-size: 0\.93rem;[\s\S]*min-height: 1\.5em;[\s\S]*height: 1\.5em;[\s\S]*display: flex;[\s\S]*align-items: center;/, '编辑标题区域应保持稳定高度并垂直居中');
+  assert.match(html, /\.edit-input \{[\s\S]*top: 50%;[\s\S]*height: calc\(100% \+ 2px\);[\s\S]*transform: translateY\(-50%\);[\s\S]*display: block;/, '编辑输入框应在固定标题区域内垂直对齐');
   assert.match(html, /<textarea[\s\S]*class="edit-input"/);
   assert.doesNotMatch(html, /<div class="todo-text[^>]*onclick=/);
 
@@ -492,6 +534,7 @@ async function testFrontend() {
       passed: true,
       checks: [
         'static allowlist and same-origin proxy policy',
+        'todo priority defaults, validation, persistence, and UI selector',
         'reminder no-op/concurrency/stale-state protection',
         'WebDAV response and gzip limits',
         '409 content verification and safe restore publish',

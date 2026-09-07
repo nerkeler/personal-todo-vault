@@ -340,7 +340,7 @@ TODO_RESTORE_MAX_BYTES=134217728
 | POST | `/api/backup/run` | 立即上传云端备份 |
 | GET | `/api/icons` | 获取预设分类图标 |
 
-待办 API 使用 camelCase 字段，例如 `categoryId`、`createdAt`、`reminderEnabled`、`reminderTime`、`reminderMode`、`reminderWeekdays`、`reminderRepeatCount`、`creatorEmail`、`noteFile`。
+待办 API 使用 camelCase 字段，例如 `categoryId`、`priority`、`createdAt`、`reminderEnabled`、`reminderTime`、`reminderMode`、`reminderWeekdays`、`reminderRepeatCount`、`creatorEmail`、`noteFile`。`priority` 为 0（普通）、1（重要）或 2（紧急）。
 
 ## 项目结构
 

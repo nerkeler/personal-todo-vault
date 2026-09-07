@@ -104,6 +104,7 @@ function isValidTime(value) {
 }
 
 const REMINDER_MODES = new Set(['once', 'weekly', 'count']);
+const PRIORITY_LEVELS = new Set([0, 1, 2]);
 const WEEKDAY_NAMES = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const MAX_REMINDER_NOTE_CHARS = 4000;
 
@@ -760,13 +761,16 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'POST') {
-      withBody(async ({ title, categoryId }) => {
+      withBody(async ({ title, categoryId, priority }) => {
         if (!isNonEmptyString(title, 200)) { jsonResR({ error: '标题必须是 1-200 个字符的非空字符串' }, 400); return; }
+        if (priority !== undefined && (!Number.isInteger(priority) || !PRIORITY_LEVELS.has(priority))) {
+          jsonResR({ error: 'priority 必须是 0、1 或 2' }, 400); return;
+        }
         const selectedCategoryId = categoryId || defaultCategoryId();
         if (!selectedCategoryId || !hasCategory(selectedCategoryId)) {
           jsonResR({ error: 'Category not found' }, 400); return;
         }
-        try { jsonResR(createTodo(title.trim(), selectedCategoryId)); }
+        try { jsonResR(createTodo(title.trim(), selectedCategoryId, priority ?? 0)); }
         catch (e) { jsonResR({ error: e.message }, 500); }
       });
       return;
@@ -808,6 +812,9 @@ const server = http.createServer(async (req, res) => {
             (!Number.isInteger(updates.progress) || updates.progress < 0 || updates.progress > 100)) {
           jsonResR({ error: 'progress 必须是 0-100 的整数' }, 400); return;
         }
+        if (updates.priority !== undefined && (!Number.isInteger(updates.priority) || !PRIORITY_LEVELS.has(updates.priority))) {
+          jsonResR({ error: 'priority 必须是 0、1 或 2' }, 400); return;
+        }
         if (updates.reminderEnabled !== undefined && typeof updates.reminderEnabled !== 'boolean') {
           jsonResR({ error: 'reminderEnabled 必须是布尔值' }, 400); return;
         }
@@ -835,6 +842,7 @@ const server = http.createServer(async (req, res) => {
           if (updates.completed !== undefined) kw.completed = updates.completed;
           if (updates.categoryId !== undefined) kw.categoryId = updates.categoryId;
           if (updates.progress !== undefined) kw.progress = updates.progress;
+          if (updates.priority !== undefined) kw.priority = updates.priority;
           if (updates.reminderEnabled !== undefined) kw.reminderEnabled = updates.reminderEnabled;
           if (updates.reminderTime !== undefined) kw.reminderTime = updates.reminderTime;
           if (updates.reminderMode !== undefined) kw.reminderMode = updates.reminderMode;

@@ -446,8 +446,80 @@
       z-index: auto;
     }
     .cat-picker-btn:hover { border-color: var(--primary); }
-    .cat-picker-btn .arrow { margin-left: auto; font-size: 10px; color: var(--text-3); }
+    .cat-picker-btn #catPickerLabel {
+      position: absolute;
+      inset: 0 24px 0 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-width: 0;
+      padding: 0 12px;
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+    .cat-picker-btn #catPickerLabel .ui-icon {
+      position: static;
+      flex: 0 0 auto;
+    }
+    .cat-picker-btn #catPickerLabel > span {
+      display: block;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .cat-picker-btn .arrow {
+      position: absolute;
+      right: 12px;
+      margin-left: 0;
+      font-size: 10px;
+      color: var(--text-3);
+      pointer-events: none;
+    }
     .cat-picker-btn.open { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+
+    .add-priority-btn {
+      height: 52px;
+      width: 96px;
+      min-width: 96px;
+      padding: 0 10px;
+      border: 1.5px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.9rem;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .add-priority-btn.priority-normal {
+      color: var(--text);
+      background: var(--bg);
+      border-color: var(--border);
+    }
+    .add-priority-btn.priority-important {
+      color: var(--text);
+      background: var(--bg);
+      border-color: var(--border);
+    }
+    .add-priority-btn.priority-urgent {
+      color: var(--text);
+      background: var(--bg);
+      border-color: var(--border);
+    }
+    #addPriorityLabel { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .add-priority-btn:hover,
+    .add-priority-btn.open { border-color: var(--primary); }
+    .add-priority-btn.open { box-shadow: 0 0 0 3px var(--primary-light); }
+    .add-priority-btn .arrow { font-size: 10px; color: var(--text-3); }
 
     /* Category dropdown list */
     .cat-picker-list {
@@ -535,6 +607,7 @@
     .pagination-ellipsis { padding: 0 3px; color: var(--text-3); }
 
     .todo-item {
+      --todo-action-space: 116px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -670,10 +743,32 @@
     .todo-progress-add:hover { background: var(--border); color: var(--accent); }
 
     .todo-meta {
+      position: relative;
       display: flex;
       align-items: center;
-      gap: 8px;
+      justify-content: space-between;
+      gap: 12px;
       margin-top: 4px;
+      width: calc(100% + var(--todo-action-space) + 10px);
+      margin-right: calc(-1 * var(--todo-action-space) - 10px);
+    }
+    .todo-labels,
+    .todo-dates {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+    .todo-labels {
+      flex: 1 1 auto;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .todo-dates {
+      flex: 0 1 auto;
+      justify-content: flex-end;
+      gap: 6px;
+      margin-left: auto;
+      white-space: nowrap;
     }
 
     .todo-cat-tag {
@@ -681,8 +776,11 @@
       color: var(--primary);
       background: var(--primary-light);
       padding: 2px 8px;
+      min-width: 72px;
+      height: 22px;
+      box-sizing: border-box;
       border-radius: 10px;
-      display: inline-flex; align-items: center; gap: 4px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 4px;
       cursor: pointer;
       transition: all 0.15s;
       user-select: none;
@@ -694,7 +792,70 @@
     .todo-cat-tag.readonly { cursor: default; }
     .todo-cat-tag.readonly:hover { background: var(--primary-light); color: var(--primary); }
 
-    .todo-meta { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+    .todo-priority-tag {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      width: 72px;
+      min-width: 72px;
+      min-height: 22px;
+      padding: 2px 8px;
+      box-sizing: border-box;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      font: inherit;
+      font-size: 0.68rem;
+      line-height: 1.2;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s ease;
+    }
+    .todo-priority-tag.priority-normal {
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+      border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+    }
+    .todo-priority-tag.priority-important {
+      color: #a16207;
+      background: #fef3c7;
+      border-color: #fcd34d;
+    }
+    .todo-priority-tag.priority-urgent {
+      color: var(--danger);
+      background: var(--danger-light);
+      border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+    }
+    .todo-priority-tag:hover:not(:disabled),
+    .todo-priority-tag:focus-visible {
+      border-color: currentColor;
+      outline: none;
+      box-shadow: 0 0 0 2px var(--primary-light);
+    }
+    .todo-priority-tag:disabled { cursor: default; opacity: 0.8; }
+    [data-theme="dark"] .todo-priority-tag.priority-important {
+      color: #fbbf24;
+      background: color-mix(in srgb, #f59e0b 18%, var(--surface));
+      border-color: color-mix(in srgb, #f59e0b 38%, var(--border));
+    }
+    .priority-dot {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .priority-dot-important { background: #f59e0b; }
+    .priority-dot-urgent { background: var(--danger); }
+    .todo-priority-tag .priority-dot {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      flex: none;
+    }
 
     .todo-date {
       font-size: 0.72rem;
@@ -723,6 +884,12 @@
       font-size: 0.68rem;
       color: #fff;
       padding: 1px 7px;
+      min-width: 72px;
+      height: 22px;
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       border-radius: 10px;
       font-weight: 600;
       letter-spacing: 0.3px;
@@ -734,7 +901,9 @@
     /* Todo actions */
     .todo-actions {
       display: flex;
+      width: var(--todo-action-space);
       gap: 4px;
+      justify-content: flex-end;
       opacity: 0;
       transition: opacity var(--transition);
       flex-shrink: 0;
@@ -762,14 +931,27 @@
     .todo-act-btn.move:hover { background: var(--primary-light); color: var(--primary); }
 
     /* Edit input */
-    .todo-title-editor { position: relative; min-width: 0; }
+    .todo-title-editor {
+      position: relative;
+      min-width: 0;
+      font-size: 0.93rem;
+      min-height: 1.5em;
+      height: 1.5em;
+      display: flex;
+      align-items: center;
+      line-height: 1.5;
+    }
     .todo-title-placeholder { visibility: hidden; pointer-events: none; }
     .edit-input {
       position: absolute;
-      inset: 0;
+      top: 50%;
+      right: 0;
+      bottom: auto;
+      left: 0;
       width: 100%;
-      height: 100%;
-      min-height: 1.5em;
+      height: calc(100% + 2px);
+      min-height: 0;
+      transform: translateY(-50%);
       border: 1.5px solid var(--primary);
       border-radius: 6px;
       padding: 0 10px;
@@ -783,6 +965,8 @@
       box-shadow: 0 0 0 3px var(--primary-light);
       resize: none;
       overflow: auto;
+      margin: 0;
+      display: block;
     }
 
     /* Empty state */
@@ -1197,12 +1381,114 @@
       font-size: 0.78rem;
       line-height: 1.6;
     }
+    .theme-mode-fieldset {
+      border: 0;
+      padding: 0;
+      margin: 0;
+      min-width: 0;
+    }
+    .theme-mode-fieldset legend {
+      padding: 0;
+      margin-bottom: 8px;
+      color: var(--text-2);
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .theme-mode-options {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .theme-mode-option {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      min-height: 68px;
+      padding: 10px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text-2);
+      cursor: pointer;
+      transition: border-color var(--transition), background var(--transition), color var(--transition);
+    }
+    .theme-mode-option:hover {
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+    .theme-mode-option:has(input:checked) {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      color: var(--text);
+    }
+    .theme-mode-option input {
+      flex: 0 0 auto;
+      width: 15px;
+      height: 15px;
+      margin-top: 2px;
+      accent-color: var(--primary);
+    }
+    .theme-mode-option strong,
+    .theme-mode-option small { display: block; }
+    .theme-mode-option strong { color: inherit; font-size: 0.8rem; line-height: 1.3; }
+    .theme-mode-option small { margin-top: 3px; color: var(--text-3); font-size: 0.68rem; line-height: 1.45; }
+    .theme-schedule-fields { margin-top: 12px; }
+    .theme-schedule-fields[hidden] { display: none; }
+    .theme-schedule-hint { margin-top: 10px; }
+    .theme-settings-section { margin-bottom: 14px; }
+    .theme-mode-option input:focus-visible { outline: 3px solid var(--primary-light); outline-offset: 2px; }
     .settings-section {
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px;
       margin-bottom: 14px;
       background: var(--bg);
+    }
+    .settings-disclosure {
+      padding: 0;
+      overflow: hidden;
+    }
+    .settings-disclosure-summary {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }
+    .settings-disclosure-summary::-webkit-details-marker { display: none; }
+    .settings-disclosure-summary:focus-visible {
+      outline: 3px solid var(--primary-light);
+      outline-offset: -3px;
+    }
+    .settings-disclosure-summary .settings-section-head {
+      flex: 1;
+      min-width: 0;
+      margin-bottom: 0;
+    }
+    .settings-disclosure-chevron {
+      flex: 0 0 auto;
+      width: 9px;
+      height: 9px;
+      margin: -4px 4px 0 0;
+      border-right: 1.5px solid var(--text-3);
+      border-bottom: 1.5px solid var(--text-3);
+      transform: rotate(45deg);
+      transition: transform var(--transition), border-color var(--transition);
+    }
+    .settings-disclosure-summary:hover .settings-disclosure-chevron,
+    .settings-disclosure-summary:focus-visible .settings-disclosure-chevron {
+      border-color: var(--primary);
+    }
+    .settings-disclosure[open] .settings-disclosure-chevron {
+      margin-top: 5px;
+      transform: rotate(225deg);
+    }
+    .settings-disclosure-body {
+      padding: 0 16px 16px;
+      border-top: 1px solid var(--border);
     }
     .settings-section-head,
     .settings-switch-row,
@@ -1265,6 +1551,9 @@
     @media (max-width: 720px) {
       .settings-grid { grid-template-columns: 1fr; }
       .settings-modal { max-width: 96vw; }
+      .theme-mode-options { grid-template-columns: 1fr; }
+      .settings-disclosure-summary { padding: 14px; }
+      .settings-disclosure-body { padding: 0 14px 14px; }
       .settings-section-head,
       .settings-switch-row,
       .settings-footer-actions { align-items: flex-start; }
@@ -1332,6 +1621,43 @@
     }
     .move-option:hover { background: var(--surface-hover); }
     .move-option.disabled { opacity: 0.4; pointer-events: none; }
+
+    .priority-dropdown {
+      position: fixed;
+      z-index: 100;
+      display: none;
+      min-width: 132px;
+      padding: 4px;
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-lg);
+      isolation: isolate;
+    }
+    .priority-dropdown.show { display: block; }
+    .priority-option {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      min-height: 32px;
+      gap: 8px;
+      padding: 0 9px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.76rem;
+      text-align: left;
+      cursor: pointer;
+    }
+    .priority-option:hover,
+    .priority-option:focus-visible { background: var(--surface-hover); outline: none; }
+    .priority-option.active { color: var(--primary); font-weight: 650; }
+    .priority-option-swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+    .priority-option.priority-important .priority-option-swatch { background: #f59e0b; }
+    .priority-option.priority-urgent .priority-option-swatch { background: var(--danger); }
 
     /* Move button wrapper */
 
@@ -1440,8 +1766,35 @@
     /* ── Responsive ── */
     @media (max-width: 768px) {
       .todo-item { position: relative; }
-      .todo-actions { position: absolute; top: 13px; right: 14px; }
-      .todo-meta { gap: 4px; }
+      .todo-actions { position: absolute; top: 13px; right: 14px; width: auto; }
+      .todo-meta {
+        align-items: center;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        gap: 8px;
+        width: 100%;
+        margin-right: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .todo-meta::-webkit-scrollbar { display: none; }
+      .todo-labels {
+        width: auto;
+        flex: 0 0 auto;
+        flex-wrap: nowrap;
+        gap: 4px;
+      }
+      .todo-dates {
+        width: auto;
+        flex: 1 1 auto;
+        margin-left: 0;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-end;
+        text-align: right;
+        white-space: nowrap;
+      }
       .todo-date { font-size: 0.7rem; gap: 3px; }
       .sidebar {
         transform: translateX(-100%);
@@ -1455,9 +1808,17 @@
       .toast { bottom: 16px; }
       .menu-btn { display: flex; align-items: center; justify-content: center; }
       .current-cat-title { font-size: 1.25rem; }
-      .add-row { flex-wrap: wrap; }
+      .add-row {
+        display: grid;
+        grid-template-columns: minmax(0, 3fr) minmax(0, 3fr) minmax(0, 2fr);
+        gap: 8px;
+        align-items: center;
+      }
       .add-input { min-width: 0; }
-      .cat-picker-btn { width: 100%; }
+      .add-input { grid-column: 1 / -1; width: 100%; }
+      .cat-picker-btn,
+      .add-priority-btn { width: 100%; min-width: 0; }
+      .add-btn { width: 100%; min-width: 0; padding-left: 14px; padding-right: 14px; }
       .cat-picker-list { position: fixed; top: auto; bottom: 0; left: 0; right: 0; border-radius: 12px 12px 0 0; max-height: 50vh; z-index: 100; isolation: isolate; }
       .cat-name { max-width: none; }
       .cat-item .cat-count { margin-left: auto; }
@@ -1543,6 +1904,10 @@
           <span class="arrow">▼</span>
         </button>
         <div class="cat-picker-list" id="catPickerList"></div>
+        <button class="add-priority-btn priority-normal" id="addPriorityBtn" onclick="toggleAddPriorityDropdown(event)" type="button">
+          <span id="addPriorityLabel"><span class="priority-dot priority-dot-normal" aria-hidden="true"></span>普通</span>
+          <span class="arrow">▼</span>
+        </button>
         <button class="add-btn" onclick="addTodo()">添加</button>
       </div>
       <div class="stats-row">
@@ -1580,8 +1945,9 @@
 
 <div class="toast" id="appToast" role="status" aria-live="polite" hidden></div>
 
-<!-- Portal: 移动分类下拉浮层（避免 stacking context 遮挡） -->
-<div id="move-dropdown-portal" style="position:fixed;z-index:100;display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);min-width:160px;overflow:hidden;isolation:isolate;"></div>
+    <!-- Portal: 移动分类和重要程度下拉浮层（避免 stacking context 遮挡） -->
+    <div id="move-dropdown-portal" style="position:fixed;z-index:100;display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);min-width:160px;overflow:hidden;isolation:isolate;"></div>
+    <div class="priority-dropdown" id="priority-dropdown-portal"></div>
 
 <!-- Category Modal (add/edit) -->
 <div class="modal-overlay" id="catModal">
@@ -1625,17 +1991,64 @@
       <span>⚙️ 配置中心</span>
       <button class="modal-close" onclick="closeSettingsModal()">✕</button>
     </div>
-    <div class="settings-hint">邮件提醒和坚果云备份统一在这里配置；密码默认不显示明文，留空表示沿用已保存密码。</div>
+    <div class="settings-hint">邮件提醒和坚果云备份统一在这里配置；需要时展开对应分组。</div>
 
-    <section class="settings-section">
-      <div class="settings-section-head">
-        <div>
-          <div class="settings-section-title">📧 邮件提醒</div>
-          <div class="settings-section-desc">用于每日提醒和任务创建者邮件通知。</div>
+    <details class="settings-section settings-disclosure theme-settings-section" id="themeSettingsSection">
+      <summary class="settings-disclosure-summary">
+        <div class="settings-section-head">
+          <div>
+            <div class="settings-section-title">🎨 外观</div>
+            <div class="settings-section-desc">主题偏好只保存在当前浏览器，选择后立即生效。</div>
+          </div>
+          <span class="settings-badge" id="themeStatusBadge">手动</span>
         </div>
-        <span class="settings-badge" id="smtpStatusBadge">读取中…</span>
+        <span class="settings-disclosure-chevron" aria-hidden="true"></span>
+      </summary>
+      <div class="settings-disclosure-body">
+        <fieldset class="theme-mode-fieldset">
+        <legend>主题模式</legend>
+        <div class="theme-mode-options" role="radiogroup" aria-label="主题模式">
+          <label class="theme-mode-option">
+            <input type="radio" name="themeMode" value="manual" onchange="handleThemePreferenceChange()">
+            <span><strong>手动</strong><small>点击右上角按钮切换</small></span>
+          </label>
+          <label class="theme-mode-option">
+            <input type="radio" name="themeMode" value="system" onchange="handleThemePreferenceChange()">
+            <span><strong>跟随系统</strong><small>使用设备的明暗偏好</small></span>
+          </label>
+          <label class="theme-mode-option">
+            <input type="radio" name="themeMode" value="schedule" onchange="handleThemePreferenceChange()">
+            <span><strong>按时间</strong><small>按本地时间自动切换</small></span>
+          </label>
+        </div>
+        </fieldset>
+        <div class="settings-grid theme-schedule-fields" id="themeScheduleFields" hidden>
+          <label class="settings-field">
+            <span>浅色模式开始</span>
+            <input class="modal-input" type="time" id="themeLightStartInput" value="07:00" onchange="handleThemeScheduleChange()">
+          </label>
+          <label class="settings-field">
+            <span>深色模式开始</span>
+            <input class="modal-input" type="time" id="themeDarkStartInput" value="19:00" onchange="handleThemeScheduleChange()">
+          </label>
+        </div>
+        <div class="settings-meta theme-schedule-hint" id="themeScheduleHint"></div>
       </div>
-      <div class="settings-switch-row">
+    </details>
+
+    <details class="settings-section settings-disclosure" id="emailSettingsSection">
+      <summary class="settings-disclosure-summary">
+        <div class="settings-section-head">
+          <div>
+            <div class="settings-section-title">📧 邮件提醒</div>
+            <div class="settings-section-desc">用于每日提醒和任务创建者邮件通知。</div>
+          </div>
+          <span class="settings-badge" id="smtpStatusBadge">读取中…</span>
+        </div>
+        <span class="settings-disclosure-chevron" aria-hidden="true"></span>
+      </summary>
+      <div class="settings-disclosure-body">
+        <div class="settings-switch-row">
         <div>
           <div class="modal-label">启用邮件提醒</div>
           <div class="settings-section-desc">开启后按每日检查时间扫描待提醒任务。</div>
@@ -1644,8 +2057,8 @@
           <input type="checkbox" id="emailEnabledToggle">
           <span class="slider"></span>
         </label>
-      </div>
-      <div class="settings-grid">
+        </div>
+        <div class="settings-grid">
         <label class="settings-field">
           <span>每日检查时间</span>
           <input class="modal-input" type="time" id="checkTimeInput" value="09:00">
@@ -1682,22 +2095,27 @@
           <span>收件人</span>
           <input class="modal-input" type="text" id="emailRecipientsInput" placeholder="可填写一个或多个邮箱，多个用逗号分隔">
         </label>
-      </div>
-      <div class="settings-actions-inline">
-        <button class="modal-btn primary" id="testEmailBtn" onclick="testEmailSettings()">测试邮件</button>
-        <span class="settings-result" id="emailTestResult"></span>
-      </div>
-    </section>
-
-    <section class="settings-section">
-      <div class="settings-section-head">
-        <div>
-          <div class="settings-section-title">☁️ 坚果云备份</div>
-          <div class="settings-section-desc">通过坚果云 WebDAV 增量同步数据库和 Markdown 笔记；每次保留一份完整快照清单。</div>
         </div>
-        <span class="settings-badge" id="backupStatusBadge">读取中…</span>
+        <div class="settings-actions-inline">
+          <button class="modal-btn primary" id="testEmailBtn" onclick="testEmailSettings()">测试邮件</button>
+          <span class="settings-result" id="emailTestResult"></span>
+        </div>
       </div>
-      <div class="settings-grid">
+    </details>
+
+    <details class="settings-section settings-disclosure" id="backupSettingsSection">
+      <summary class="settings-disclosure-summary">
+        <div class="settings-section-head">
+          <div>
+            <div class="settings-section-title">☁️ 坚果云备份</div>
+            <div class="settings-section-desc">通过坚果云 WebDAV 增量同步数据库和 Markdown 笔记；每次保留一份完整快照清单。</div>
+          </div>
+          <span class="settings-badge" id="backupStatusBadge">读取中…</span>
+        </div>
+        <span class="settings-disclosure-chevron" aria-hidden="true"></span>
+      </summary>
+      <div class="settings-disclosure-body">
+        <div class="settings-grid">
         <label class="settings-field settings-field-wide">
           <span>WebDAV 地址</span>
           <input class="modal-input" type="url" id="webdavBaseUrlInput" placeholder="https://dav.jianguoyun.com/dav/">
@@ -1722,14 +2140,15 @@
           <input type="checkbox" id="webdavAutoEnabledToggle">
           <span>启用自动备份</span>
         </label>
+        </div>
+        <div id="backupMeta" class="settings-meta">读取中…</div>
+        <div class="settings-actions-inline">
+          <button class="modal-btn primary" id="testWebdavBtn" onclick="testWebdavSettings()">测试坚果云</button>
+          <button class="modal-btn" id="backupNowBtn" onclick="runCloudBackup()">立即备份</button>
+          <span class="settings-result" id="backupResult"></span>
+        </div>
       </div>
-      <div id="backupMeta" class="settings-meta">读取中…</div>
-      <div class="settings-actions-inline">
-        <button class="modal-btn primary" id="testWebdavBtn" onclick="testWebdavSettings()">测试坚果云</button>
-        <button class="modal-btn" id="backupNowBtn" onclick="runCloudBackup()">立即备份</button>
-        <span class="settings-result" id="backupResult"></span>
-      </div>
-    </section>
+    </details>
 
     <div class="settings-footer-actions">
       <button class="modal-btn cancel" onclick="closeSettingsModal()">关闭</button>
@@ -1964,6 +2383,15 @@
   let selectedIcon = '🏷️';
   let selectedAddCatId = localStorage.getItem('lastUsedCatId') || 'cat_default';
   let defaultCatId = null; // resolved after categories load
+  const THEME_MODE_KEY = 'todo-theme-mode';
+  const THEME_LIGHT_START_KEY = 'todo-theme-light-start';
+  const THEME_DARK_START_KEY = 'todo-theme-dark-start';
+  let themeMode = 'manual';
+  let manualTheme = 'light';
+  let themeLightStart = '07:00';
+  let themeDarkStart = '19:00';
+  let themeMediaQuery = null;
+  let themeScheduleTimer = null;
 
   const PRESET_ICONS = [
     '🏷️','📋','📥','📌','📍','💰','💎','💳','🎬','🎥','🎞️','📺',
@@ -1978,7 +2406,9 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     initTheme();
+    initSettingsDisclosure();
     initSidebarWidth();
+    renderAddPriorityLabel();
     loadData();
     initIconGrid();
     document.getElementById('todoInput').addEventListener('keypress', e => {
@@ -1989,8 +2419,12 @@
     });
     // Close dropdowns on outside click
     document.addEventListener('click', e => {
-      if (!e.target.closest('.move-dropdown') && !e.target.closest('.cat-picker-list') && !e.target.closest('.cat-picker-btn')) {
+      if (!e.target.closest('.move-dropdown') && !e.target.closest('.priority-dropdown') &&
+          !e.target.closest('.todo-priority-tag') && !e.target.closest('.add-priority-btn') &&
+          !e.target.closest('.cat-picker-list') &&
+          !e.target.closest('.cat-picker-btn')) {
         closeMoveDropdown();
+        closePriorityDropdown();
         document.querySelectorAll('.cat-picker-list').forEach(d => d.classList.remove('open'));
         document.querySelectorAll('.cat-picker-btn').forEach(b => b.classList.remove('open'));
       }
@@ -2241,16 +2675,76 @@
 
   /* ── Theme ── */
   function initTheme() {
-    const saved = localStorage.getItem('todo-theme') || 'light';
-    setTheme(saved);
+    const storedMode = getStoredValue(THEME_MODE_KEY);
+    const storedTheme = getStoredValue('todo-theme');
+    const storedLightStart = getStoredValue(THEME_LIGHT_START_KEY);
+    const storedDarkStart = getStoredValue(THEME_DARK_START_KEY);
+    themeMode = ['manual', 'system', 'schedule'].includes(storedMode) ? storedMode : 'manual';
+    manualTheme = storedTheme === 'dark' ? 'dark' : 'light';
+    themeLightStart = isValidThemeTime(storedLightStart) ? storedLightStart : '07:00';
+    themeDarkStart = isValidThemeTime(storedDarkStart) ? storedDarkStart : '19:00';
+    applyResolvedTheme();
+    initThemeListeners();
   }
-  function setTheme(t) {
+  function getStoredValue(key) {
+    try { return localStorage.getItem(key) || ''; } catch (e) { return ''; }
+  }
+  function setStoredValue(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) {}
+  }
+  function isValidThemeTime(value) {
+    return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+  }
+  function minutesFromThemeTime(value) {
+    const [hours, minutes] = value.split(':').map(Number);
+    return hours * 60 + minutes;
+  }
+  function isLightScheduleTime(nowMinutes) {
+    const lightStart = minutesFromThemeTime(themeLightStart);
+    const darkStart = minutesFromThemeTime(themeDarkStart);
+    if (lightStart === darkStart) return true;
+    return lightStart < darkStart
+      ? nowMinutes >= lightStart && nowMinutes < darkStart
+      : nowMinutes >= lightStart || nowMinutes < darkStart;
+  }
+  function resolveTheme() {
+    if (themeMode === 'system') {
+      return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    if (themeMode === 'schedule') {
+      const now = new Date();
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      return isLightScheduleTime(nowMinutes) ? 'light' : 'dark';
+    }
+    return manualTheme;
+  }
+  function applyResolvedTheme() {
+    setTheme(resolveTheme(), { persist: false });
+  }
+  function themeModeLabel(mode = themeMode) {
+    return mode === 'system' ? '跟随系统' : mode === 'schedule' ? '按时间' : '手动';
+  }
+  function setTheme(t, { persist = true } = {}) {
+    if (t !== 'dark' && t !== 'light') t = 'light';
     document.documentElement.setAttribute('data-theme', t);
-    localStorage.setItem('todo-theme', t);
-    document.getElementById('themeToggle').textContent = t === 'dark' ? '☀️' : '🌙';
+    if (persist) {
+      manualTheme = t;
+      setStoredValue('todo-theme', t);
+    }
+    const button = document.getElementById('themeToggle');
+    if (button) {
+      button.textContent = t === 'dark' ? '☀️' : '🌙';
+      button.title = `切换主题（${t === 'dark' ? '深色' : '浅色'} · ${themeModeLabel()}）`;
+      button.setAttribute('aria-label', button.title);
+    }
   }
   function toggleTheme() {
     const cur = document.documentElement.getAttribute('data-theme') || 'light';
+    if (themeMode !== 'manual') {
+      themeMode = 'manual';
+      setStoredValue(THEME_MODE_KEY, themeMode);
+      populateThemeForm();
+    }
     setTheme(cur === 'dark' ? 'light' : 'dark');
     const button = document.getElementById('themeToggle');
     if (button && !prefersReducedMotion() && button.animate) {
@@ -2260,6 +2754,94 @@
         { transform: 'rotate(0) scale(1)' }
       ], { duration: 260, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
     }
+  }
+  function initThemeListeners() {
+    themeMediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)') || null;
+    themeMediaQuery?.addEventListener?.('change', () => {
+      if (themeMode === 'system') applyResolvedTheme();
+    });
+    window.addEventListener('storage', e => {
+      if (![THEME_MODE_KEY, 'todo-theme', THEME_LIGHT_START_KEY, THEME_DARK_START_KEY].includes(e.key)) return;
+      const storedMode = getStoredValue(THEME_MODE_KEY);
+      themeMode = ['manual', 'system', 'schedule'].includes(storedMode) ? storedMode : 'manual';
+      const storedTheme = getStoredValue('todo-theme');
+      manualTheme = storedTheme === 'dark' ? 'dark' : 'light';
+      const storedLightStart = getStoredValue(THEME_LIGHT_START_KEY);
+      const storedDarkStart = getStoredValue(THEME_DARK_START_KEY);
+      if (isValidThemeTime(storedLightStart)) themeLightStart = storedLightStart;
+      if (isValidThemeTime(storedDarkStart)) themeDarkStart = storedDarkStart;
+      applyResolvedTheme();
+      refreshThemeTimer();
+      populateThemeForm();
+    });
+    refreshThemeTimer();
+  }
+  function refreshThemeTimer() {
+    window.clearInterval(themeScheduleTimer);
+    themeScheduleTimer = null;
+    if (themeMode === 'schedule') {
+      themeScheduleTimer = window.setInterval(applyResolvedTheme, 30000);
+    }
+  }
+  function populateThemeForm() {
+    document.querySelectorAll('input[name="themeMode"]').forEach(input => {
+      input.checked = input.value === themeMode;
+    });
+    const lightInput = document.getElementById('themeLightStartInput');
+    const darkInput = document.getElementById('themeDarkStartInput');
+    if (lightInput) lightInput.value = themeLightStart;
+    if (darkInput) darkInput.value = themeDarkStart;
+    const scheduleFields = document.getElementById('themeScheduleFields');
+    if (scheduleFields) scheduleFields.hidden = themeMode !== 'schedule';
+    const hint = document.getElementById('themeScheduleHint');
+    if (hint) {
+      hint.textContent = themeMode === 'schedule'
+        ? `每天 ${themeLightStart}–${themeDarkStart} 使用浅色，其余时间使用深色。`
+        : themeMode === 'system'
+          ? '系统主题变化时会自动同步；右上角按钮仍可临时切换为手动模式。'
+          : '右上角按钮控制当前主题；切换后会保存在当前浏览器。';
+    }
+    const badge = document.getElementById('themeStatusBadge');
+    if (badge) badge.textContent = themeModeLabel();
+  }
+  function setThemeMode(mode) {
+    if (!['manual', 'system', 'schedule'].includes(mode)) return;
+    if (mode === 'manual') {
+      const current = document.documentElement.getAttribute('data-theme');
+      if (current === 'dark' || current === 'light') manualTheme = current;
+    }
+    themeMode = mode;
+    setStoredValue(THEME_MODE_KEY, themeMode);
+    applyResolvedTheme();
+    refreshThemeTimer();
+    populateThemeForm();
+  }
+  function handleThemePreferenceChange() {
+    const selected = document.querySelector('input[name="themeMode"]:checked');
+    if (selected) setThemeMode(selected.value);
+  }
+  function handleThemeScheduleChange() {
+    const lightInput = document.getElementById('themeLightStartInput');
+    const darkInput = document.getElementById('themeDarkStartInput');
+    if (isValidThemeTime(lightInput?.value)) {
+      themeLightStart = lightInput.value;
+      setStoredValue(THEME_LIGHT_START_KEY, themeLightStart);
+    }
+    if (isValidThemeTime(darkInput?.value)) {
+      themeDarkStart = darkInput.value;
+      setStoredValue(THEME_DARK_START_KEY, themeDarkStart);
+    }
+    applyResolvedTheme();
+    populateThemeForm();
+  }
+
+  function resetSettingsDisclosure() {
+    document.querySelectorAll('details.settings-disclosure').forEach(section => {
+      section.open = false;
+    });
+  }
+  function initSettingsDisclosure() {
+    resetSettingsDisclosure();
   }
 
   /* ── Settings Modal ── */
@@ -2350,6 +2932,7 @@
 
   function populateSettingsForm() {
     settings = normalizeSettings(settings);
+    populateThemeForm();
     const email = settings.email;
     const webdav = settings.webdav;
     const setVal = (id, value = '') => { const el = document.getElementById(id); if (el) el.value = value ?? ''; };
@@ -2412,6 +2995,7 @@
   }
 
   async function openSettingsModal(source) {
+    resetSettingsDisclosure();
     showModal('settingsModal', source || document.getElementById('settingsBtn'));
     populateSettingsForm();
     setResult('settingsSaveResult', '正在读取配置…');
@@ -3064,6 +3648,24 @@
     document.getElementById('doneSection')?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
   }
 
+  const PRIORITY_META = Object.freeze({
+    0: { className: 'normal', label: '普通' },
+    1: { className: 'important', label: '重要' },
+    2: { className: 'urgent', label: '紧急' },
+  });
+
+  function todoPriorityValue(todo) {
+    const priority = Number(todo?.priority);
+    return Number.isInteger(priority) && PRIORITY_META[priority] ? priority : 0;
+  }
+
+  function priorityTagMarkup(todo) {
+    const priority = todoPriorityValue(todo);
+    const meta = PRIORITY_META[priority];
+    const readonly = !!todo.completed;
+    return `<button type="button" class="todo-priority-tag priority-${meta.className}" ${readonly ? 'disabled' : `onclick="event.stopPropagation(); togglePriorityDropdown('${todo.id}', event)"`} title="${readonly ? '重要程度：' : '修改重要程度：'}${meta.label}"><span class="priority-dot priority-dot-${meta.className}" aria-hidden="true"></span>${meta.label}</button>`;
+  }
+
   function makeTodoItem(t) {
     const cat = categories.find(c => c.id === t.categoryId);
     const isEditing = editingTodoId === t.id;
@@ -3128,11 +3730,16 @@
           </div>
           `}
           <div class="todo-meta">
-            ${periodBadge}
-            <span class="todo-cat-tag${t.completed ? ' readonly' : ''}" ${t.completed ? 'aria-disabled="true"' : `onclick="event.stopPropagation(); toggleMoveDropdown('${t.id}', event)"`}>${catIcon}<span>${escHtml(catName)}</span> ▼</span>
-            <span class="todo-date todo-date-created">${dateStr}</span>
-            <span class="todo-date-divider" aria-hidden="true">｜</span>
-            <span class="todo-date todo-date-updated">${updatedDateStr}</span>
+            <div class="todo-labels">
+              <span class="todo-cat-tag${t.completed ? ' readonly' : ''}" ${t.completed ? 'aria-disabled="true"' : `onclick="event.stopPropagation(); toggleMoveDropdown('${t.id}', event)"`}>${catIcon}<span>${escHtml(catName)}</span> ▼</span>
+              ${priorityTagMarkup(t)}
+              ${periodBadge}
+            </div>
+            <div class="todo-dates">
+              <span class="todo-date todo-date-created">${dateStr}</span>
+              <span class="todo-date-divider" aria-hidden="true">｜</span>
+              <span class="todo-date todo-date-updated">${updatedDateStr}</span>
+            </div>
           </div>
         </div>
         <div class="todo-actions">
@@ -3146,11 +3753,148 @@
   }
 
   let openMoveTodoId = null;
+  let openPriorityTodoId = null;
+  let selectedAddPriority = 0;
+  const ADD_PRIORITY_TODO_ID = '__new__';
+
+  function renderAddPriorityLabel() {
+    const label = document.getElementById('addPriorityLabel');
+    const button = document.getElementById('addPriorityBtn');
+    const meta = PRIORITY_META[selectedAddPriority] || PRIORITY_META[0];
+    if (label) label.innerHTML = `<span class="priority-dot priority-dot-${meta.className}" aria-hidden="true"></span>${meta.label}`;
+    if (button) {
+      button.classList.remove('priority-normal', 'priority-important', 'priority-urgent');
+      button.classList.add(`priority-${meta.className}`);
+    }
+  }
+
+  function toggleAddPriorityDropdown(event) {
+    if (event) event.stopPropagation();
+    const portal = document.getElementById('priority-dropdown-portal');
+    const button = event?.currentTarget || document.getElementById('addPriorityBtn');
+    if (!portal || !button) return;
+    if (openPriorityTodoId === ADD_PRIORITY_TODO_ID && portal.classList.contains('show')) {
+      closePriorityDropdown();
+      return;
+    }
+
+    closeMoveDropdown();
+    closePriorityDropdown();
+    openPriorityTodoId = ADD_PRIORITY_TODO_ID;
+    portal.innerHTML = Object.entries(PRIORITY_META).map(([value, meta]) => `
+      <button type="button" class="priority-option priority-${meta.className}${Number(value) === selectedAddPriority ? ' active' : ''}"
+              onclick="setAddPriority(${value})">
+        <span class="priority-option-swatch" aria-hidden="true"></span>
+        <span>${meta.label}</span>
+        ${Number(value) === selectedAddPriority ? '<span aria-hidden="true">✓</span>' : ''}
+      </button>
+    `).join('');
+
+    const rect = button.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let top = rect.bottom + 4;
+    let left = rect.left;
+    portal.classList.add('show');
+    const menuRect = portal.getBoundingClientRect();
+    if (left + menuRect.width > vw) left = Math.max(4, vw - menuRect.width - 4);
+    if (top + menuRect.height > vh) top = Math.max(4, rect.top - menuRect.height - 4);
+    portal.style.top = `${top}px`;
+    portal.style.left = `${left}px`;
+    button.classList.add('open');
+  }
+
+  function setAddPriority(priority) {
+    const numericPriority = Number(priority);
+    if (!PRIORITY_META[numericPriority]) return;
+    selectedAddPriority = numericPriority;
+    renderAddPriorityLabel();
+    closePriorityDropdown();
+  }
+
+  function togglePriorityDropdown(todoId, event) {
+    if (event) event.stopPropagation();
+    const portal = document.getElementById('priority-dropdown-portal');
+    const todo = todos.find(item => item.id === todoId);
+    if (!portal || !todo || todo.completed) {
+      closePriorityDropdown();
+      return;
+    }
+    if (openPriorityTodoId === todoId && portal.classList.contains('show')) {
+      closePriorityDropdown();
+      return;
+    }
+
+    closeMoveDropdown();
+    document.getElementById('addPriorityBtn')?.classList.remove('open');
+    openPriorityTodoId = todoId;
+    const currentPriority = todoPriorityValue(todo);
+    portal.innerHTML = Object.entries(PRIORITY_META).map(([value, meta]) => `
+      <button type="button" class="priority-option priority-${meta.className}${Number(value) === currentPriority ? ' active' : ''}"
+              onclick="setTodoPriority('${todoId}', ${value})">
+        <span class="priority-option-swatch" aria-hidden="true"></span>
+        <span>${meta.label}</span>
+        ${Number(value) === currentPriority ? '<span aria-hidden="true">✓</span>' : ''}
+      </button>
+    `).join('');
+
+    const source = event?.currentTarget || document.querySelector(`[data-id="${todoId}"] .todo-priority-tag`);
+    const rect = source?.getBoundingClientRect?.();
+    if (!rect) {
+      closePriorityDropdown();
+      return;
+    }
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let top = rect.bottom + 4;
+    let left = rect.left;
+    portal.classList.add('show');
+    const menuRect = portal.getBoundingClientRect();
+    if (left + menuRect.width > vw) left = Math.max(4, vw - menuRect.width - 4);
+    if (top + menuRect.height > vh) top = Math.max(4, rect.top - menuRect.height - 4);
+    portal.style.top = `${top}px`;
+    portal.style.left = `${left}px`;
+  }
+
+  function closePriorityDropdown() {
+    const portal = document.getElementById('priority-dropdown-portal');
+    if (portal) {
+      portal.classList.remove('show');
+      portal.innerHTML = '';
+    }
+    document.getElementById('addPriorityBtn')?.classList.remove('open');
+    openPriorityTodoId = null;
+  }
+
+  async function setTodoPriority(todoId, priority) {
+    const todo = todos.find(item => item.id === todoId);
+    const numericPriority = Number(priority);
+    closePriorityDropdown();
+    if (!todo || todo.completed || !PRIORITY_META[numericPriority]) return;
+    if (todoPriorityValue(todo) === numericPriority) return;
+    try {
+      const res = await fetch(`${API}/todos/${todoId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priority: numericPriority })
+      });
+      const updated = await res.json();
+      if (!res.ok) throw new Error(updated.error || '更新重要程度失败');
+      const index = todos.findIndex(item => item.id === todoId);
+      if (index !== -1) todos[index] = updated;
+      render();
+      showToast(`已设为${PRIORITY_META[numericPriority].label}`);
+    } catch (e) {
+      console.error(e);
+      showToast('重要程度保存失败，请重试');
+    }
+  }
 
   function toggleMoveDropdown(todoId, event) {
     if (event) event.stopPropagation();
     const portal = document.getElementById('move-dropdown-portal');
     if (!portal) return;
+    closePriorityDropdown();
     const moveTodoItem = todos.find(x => x.id === todoId);
     if (!moveTodoItem || moveTodoItem.completed) {
       closeMoveDropdown();
@@ -3216,11 +3960,13 @@
       const res = await fetch(API + '/todos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, categoryId })
+        body: JSON.stringify({ title, categoryId, priority: selectedAddPriority })
       });
       const t = await res.json();
       todos.unshift(t);
       input.value = '';
+      selectedAddPriority = 0;
+      renderAddPriorityLabel();
       renderCats();
       render({ animateTodoId: t.id });
       const cat = categories.find(c => c.id === categoryId);
