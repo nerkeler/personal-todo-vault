@@ -530,9 +530,12 @@ async function testFrontend() {
   assert.match(html, /\.todo-priority-tag \{[\s\S]*justify-content: center;/, '重要程度文字应在标签内居中');
   assert.match(html, /\.todo-priority-tag \.priority-dot \{[\s\S]*position: absolute;/, '重要程度圆点不应影响文字居中');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.add-row \{[\s\S]*display: grid;[\s\S]*grid-template-columns: minmax\(0, 3fr\) minmax\(0, 3fr\) minmax\(0, 2fr\);[\s\S]*\.add-input \{ grid-column: 1 \/ -1;/, '移动端分类、重要程度和添加按钮应按 3:3:2 比例保持同一行');
-  assert.match(html, /\.cat-picker-btn #catPickerLabel \{[\s\S]*position: absolute;[\s\S]*inset: 0 24px 0 0;[\s\S]*justify-content: center;[\s\S]*gap: 6px;[\s\S]*padding: 0 12px;/, '分类按钮图标和文字应在箭头之外居中');
+  assert.match(html, /\.cat-picker-btn \{[\s\S]*flex: 0 1 auto;[\s\S]*width: fit-content;[\s\S]*min-width: 112px;[\s\S]*max-width: 200px;/, '分类按钮应按内容动态调整宽度并保留合理边界');
+  assert.match(html, /\.cat-picker-btn #catPickerLabel \{[\s\S]*position: static;[\s\S]*justify-content: center;[\s\S]*gap: 6px;[\s\S]*padding: 0;/, '分类按钮图标和文字应保持整体居中');
   assert.match(html, /\.cat-picker-btn #catPickerLabel \.ui-icon \{[\s\S]*position: static;/, '分类图标应随文字一起居中');
-  assert.match(html, /\.cat-picker-btn \.arrow \{[\s\S]*position: absolute;[\s\S]*right: 12px;/, '分类下拉箭头应固定在右侧');
+  assert.match(html, /\.cat-picker-btn \.arrow \{[\s\S]*position: static;[\s\S]*flex: 0 0 auto;/, '分类下拉箭头应与内容保持稳定对齐');
+  assert.match(html, /\.category-icon-slot \{[\s\S]*display: inline-flex;[\s\S]*align-items: center;[\s\S]*justify-content: center;/, '分类图标应使用统一的对齐槽位');
+  assert.match(html, /max-width: 920px;/, '主内容区应适度利用右侧空间');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-meta \{[\s\S]*align-items: center;[\s\S]*flex-direction: row;[\s\S]*flex-wrap: nowrap;[\s\S]*overflow-x: auto;/, '移动端元信息应保持横向单行并垂直居中');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-labels \{[\s\S]*flex: 0 0 auto;[\s\S]*flex-wrap: nowrap;/, '移动端标签组应保持横向单行');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-dates \{[\s\S]*width: auto;[\s\S]*flex: 1 1 auto;[\s\S]*display: flex;[\s\S]*flex-direction: row;[\s\S]*align-items: center;[\s\S]*justify-content: flex-end;/, '移动端日期应与标签同排并保持中心线对齐');
