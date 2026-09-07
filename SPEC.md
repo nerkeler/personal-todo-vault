@@ -105,6 +105,8 @@ Markdown 预览会先转义文本，再应用有限的格式化规则；链接�
 - `GET /api/settings`
 - `PUT /api/settings`：`{ emailEnabled, checkTime }`
 
+备份快照清单写入 `snapshots/YYYY-MM/<snapshot-id>.json`，`latest.json` 始终位于备份根目录；恢复同时兼容迁移前的 `snapshots/<snapshot-id>.json` 路径。
+
 输入约束包括：标题 1–200 字符、分类名 1–80 字符、进度为 0–100 整数、重要程度为 0（普通）、1（重要）或 2（紧急）、时间为 `HH:MM`、提醒邮箱最多 320 字符。`reminderMode` 只能是 `once`、`weekly` 或 `count`；`weekly`/`count` 至少选择一个星期；`reminderRepeatCount` 为 1–1000 的整数。已启用提醒必须设置有效时间。不存在的待办或分类返回 HTTP 404。
 
 提醒任务由服务端每分钟检查，使用服务本机时区；每个待办每天最多发送一次。单次提醒发送成功后自动关闭；按次数提醒达到总次数后自动关闭；每周提醒持续有效，直到手动关闭。已完成待办不会发送提醒。

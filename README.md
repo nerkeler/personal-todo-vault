@@ -236,12 +236,13 @@ todo-app-backups/
 ├── objects/
 │   ├── database/<sha256>.db.gz
 │   └── notes/<sha256>.md.gz
-├── snapshots/<timestamp>-<random>.json
+├── snapshots/
+│   └── YYYY-MM/<timestamp>-<random>.json
 └── latest.json
 ```
 
 - `todo.db` 和每个 Markdown 笔记独立计算 SHA-256；只有新内容或变更内容上传，未变化对象会复用。
-- 每次备份生成一份完整快照清单；`latest.json` 指向最新快照。
+- 每次备份生成一份完整快照清单，并按 `snapshots/YYYY-MM/` 归档；`latest.json` 指向最新快照。
 - 删除的笔记不会出现在最新快照中；历史快照和对象默认保留，便于保留历史版本。
 - 这是**单向备份**，不是双向同步。请不要直接在坚果云目录中编辑对象文件。
 - 备份对象只做 gzip 压缩和 SHA-256 完整性校验，**不提供加密**；坚果云目录中的数据库和 Markdown 内容应按明文敏感数据保护。
@@ -310,13 +311,21 @@ TODO_RESTORE_MAX_BYTES=134217728
 
 - 只有确认要重新生成数据库时才使用 `npm run migrate -- --force`；覆盖前会把原数据库备份到 `TODO_BACKUP_DIR`（默认 `/data/backups`）。
 - 脚本使用当前完整 SQLite 结构、校验源数据并原子写入；本地服务保存数据库时也采用临时文件、`fsync` 和原子替换，并保留最近 10 份滚动备份。
-- 坚果云备份提供增量上传与完整快照清单；备份对象是 gzip + SHA-256 校验格式，**不是加密备份**。
+- 坚果云备份提供增量上传与按月归档的完整快照清单；备份对象是 gzip + SHA-256 校验格式，**不是加密备份**。
+- 升级已有备份时，先预览旧快照迁移计划，再执行迁移：
+
+  ```bash
+  TODO_CONFIG_DIR=/config npm run migrate:snapshots -- --dry-run
+  TODO_CONFIG_DIR=/config npm run migrate:snapshots -- --apply
+  ```
+
+  脚本只处理 `snapshots/` 根目录下的旧快照，按清单中的 `createdAt` 移动到对应月份；`latest.json` 保持在根目录但会同步更新指针，`objects/` 和快照内容不会改变。迁移采用“先复制、更新指针、再删除旧路径”的顺序，目标已存在且内容一致时只清理旧路径，内容冲突会停止并要求人工处理。脚本可重复执行，执行前建议先完成一次云端备份。
 - 可执行恢复工具会在隔离临时目录下载并校验每个对象的大小与 SHA-256，默认限制恢复的解压后总大小为 128 MiB，并拒绝覆盖已存在的目标目录。它不会恢复配置密钥：
 
   ```bash
   TODO_CONFIG_DIR=/config npm run restore -- --output-dir /data/restored-todo
   # 可选：恢复指定快照
-  TODO_CONFIG_DIR=/config npm run restore -- --snapshot snapshots/<snapshot-id>.json --output-dir /data/restored-todo
+  TODO_CONFIG_DIR=/config npm run restore -- --snapshot snapshots/YYYY-MM/<snapshot-id>.json --output-dir /data/restored-todo
   ```
 
   恢复目标的父目录必须已存在，而目标目录必须是全新的目录。工具完成后请先检查 `todo.db` 和 `notes/`，再停止当前服务，将该目录作为新的 `TODO_DATA_DIR`/`TODO_NOTES_DIR` 使用；配置请在新环境重新填写，或通过安全渠道单独迁移 `config.local.json` 与 `config.local.key`。可用 `TODO_RESTORE_MAX_BYTES`（字节数）调整恢复上限，但不建议无理由放大。

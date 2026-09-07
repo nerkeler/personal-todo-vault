@@ -6,7 +6,7 @@ const { getBackupConfig, restoreBackup } = require('./cloudBackup.js');
 function usage() {
   console.error([
     '用法：',
-    '  TODO_CONFIG_DIR=/config node restore.js --output-dir /path/to/new-data [--snapshot latest|snapshots/<id>.json]',
+    '  TODO_CONFIG_DIR=/config node restore.js --output-dir /path/to/new-data [--snapshot latest|snapshots/YYYY-MM/<id>.json]',
     '',
     '说明：',
     '  --output-dir 必须指向一个尚不存在的目录，工具不会覆盖已有目录。',

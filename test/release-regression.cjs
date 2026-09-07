@@ -339,6 +339,12 @@ async function testCloudBackup() {
   };
   const context = createCloudContext(requestImpl);
 
+  const generatedSnapshotPath = vm.runInContext(
+    "snapshotPathFor(new Date(2026, 8, 8, 12, 34, 56), 'snapshot-test')",
+    context,
+  );
+  assert.equal(generatedSnapshotPath, 'snapshots/2026-09/snapshot-test.json', '新快照应按月份归档');
+
   const dbContent = Buffer.from('synthetic database bytes');
   const noteContent = Buffer.from('# synthetic note\n');
   const databaseHash = hash(dbContent);
@@ -432,6 +438,75 @@ async function testCloudBackup() {
     "putObjectIfMissing({baseUrl:'https://mock.invalid/dav/',backupDir:'audit',username:'u',password:'p'},'objects/a.gz',Buffer.from('not gzip'),'application/gzip')",
     invalidConflict,
   ), /冲突|远程/);
+
+  const legacyName = '20260808-123456-abcd1234.json';
+  const migrationObjects = new Map();
+  const migrationRequests = [];
+  const legacyManifest = {
+    ...manifest,
+    snapshotId: 'legacy-snapshot',
+    createdAt: '2026-08-08T04:34:56.000Z',
+  };
+  migrationObjects.set(remoteKey(`snapshots/${legacyName}`), Buffer.from(json(legacyManifest)));
+  migrationObjects.set(remoteKey('latest.json'), Buffer.from(json({
+    schemaVersion: 2,
+    app: 'todo-app',
+    type: 'latest-pointer',
+    snapshotPath: `snapshots/${legacyName}`,
+    databaseHash,
+  })));
+  const migrationContext = createCloudContext(async (method, targetUrl, _config, body, headers = {}, options = {}) => {
+    const url = new URL(targetUrl);
+    const key = url.pathname;
+    migrationRequests.push({ method, key });
+    if (method === 'PROPFIND') {
+      const legacyPaths = [...migrationObjects.keys()]
+        .filter(item => new RegExp(`/dav/audit/snapshots/[^/]+\\.json$`).test(item));
+      const hrefs = ['/dav/audit/snapshots/', ...legacyPaths];
+      return {
+        statusCode: 207,
+        body: `<d:multistatus xmlns:d="DAV:">${hrefs.map(href => `<d:response><d:href>${href}</d:href></d:response>`).join('')}</d:multistatus>`,
+      };
+    }
+    if (method === 'MKCOL') return { statusCode: 201, body: '' };
+    if (method === 'PUT') {
+      migrationObjects.set(key, Buffer.from(body || ''));
+      return { statusCode: 200, body: '' };
+    }
+    if (method === 'COPY') {
+      const destination = new URL(headers.Destination).pathname;
+      const value = migrationObjects.get(key);
+      if (!value) return { statusCode: 404, body: '' };
+      if (migrationObjects.has(destination)) return { statusCode: 412, body: 'exists' };
+      migrationObjects.set(destination, value);
+      return { statusCode: 201, body: '' };
+    }
+    if (method === 'DELETE') {
+      migrationObjects.delete(key);
+      return { statusCode: 204, body: '' };
+    }
+    if (!migrationObjects.has(key)) return { statusCode: 404, body: options.binary ? Buffer.alloc(0) : '' };
+    const value = migrationObjects.get(key);
+    if (method === 'HEAD') return { statusCode: 200, body: '' };
+    return { statusCode: 200, body: options.binary ? Buffer.from(value) : value.toString('utf8') };
+  });
+  const migrationConfig = { ...config };
+  const preview = await migrationContext.migrateSnapshotFolders(migrationConfig, { apply: false });
+  assert.equal(preview.legacyCount, 1, '迁移预览应发现根目录旧快照');
+  assert.equal(preview.moveCount, 1, '迁移预览应生成移动计划');
+  assert.equal(preview.plans[0].destinationPath, `snapshots/2026-08/${legacyName}`);
+  assert.equal(preview.latestPathUpdate.to, `snapshots/2026-08/${legacyName}`, '迁移预览应包含 latest 指针更新');
+  assert(migrationObjects.has(remoteKey(`snapshots/${legacyName}`)), '预览不得移动旧快照');
+
+  const migrated = await migrationContext.migrateSnapshotFolders(migrationConfig, { apply: true });
+  assert.equal(migrated.moveCount, 1, '迁移应移动旧快照');
+  assert.equal(migrationObjects.has(remoteKey(`snapshots/${legacyName}`)), false, '迁移后旧路径应消失');
+  assert(migrationObjects.has(remoteKey(`snapshots/2026-08/${legacyName}`)), '迁移后应存在月份目录快照');
+  assert.equal(JSON.parse(migrationObjects.get(remoteKey('latest.json')).toString()).snapshotPath, `snapshots/2026-08/${legacyName}`, '迁移后 latest 指针应指向新路径');
+  assert(migrationRequests.some(item => item.method === 'COPY'), '迁移应先复制到月份目录');
+  assert(migrationRequests.some(item => item.method === 'DELETE'), '迁移应在指针更新后删除旧路径');
+  const secondRun = await migrationContext.migrateSnapshotFolders(migrationConfig, { apply: true });
+  assert.equal(secondRun.legacyCount, 0, '迁移脚本应可重复执行');
 }
 
 async function testFrontend() {
@@ -538,6 +613,7 @@ async function testFrontend() {
         'reminder no-op/concurrency/stale-state protection',
         'WebDAV response and gzip limits',
         '409 content verification and safe restore publish',
+        'monthly snapshot paths and idempotent legacy migration',
         'note race/loading guard and fixed edit layout',
       ],
       tempDirectory: TEMP_ROOT,

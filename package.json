@@ -5,6 +5,7 @@
   "scripts": {
     "start": "node server.js",
     "migrate": "node migrate.js",
+    "migrate:snapshots": "node migrate-snapshots.js",
     "restore": "node restore.js",
     "test:release": "node test/release-regression.cjs",
     "check": "node --check server.js"
