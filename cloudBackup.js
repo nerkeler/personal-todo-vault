@@ -66,6 +66,16 @@ function timestampForFile(date = new Date()) {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 }
 
+function snapshotMonthFor(date = new Date()) {
+  const value = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(value.getTime())) throw new Error(`快照时间无效：${date}`);
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function snapshotPathFor(date, snapshotId) {
+  return `snapshots/${snapshotMonthFor(date)}/${snapshotId}.json`;
+}
+
 function sha256(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
@@ -137,7 +147,7 @@ function buildSnapshot(paths, createdAt = new Date()) {
     manifest,
     dbContent,
     notes,
-    snapshotPath: `snapshots/${snapshotId}.json`,
+    snapshotPath: snapshotPathFor(createdAt, snapshotId),
     latestPath: 'latest.json',
   };
 }
@@ -299,6 +309,181 @@ async function getRemoteBuffer(config, relativePath) {
     throw new Error(`远程备份对象过大或格式无效：${safePath}`);
   }
   return res.body;
+}
+
+function decodeXmlEntities(value) {
+  return String(value || '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function snapshotNameFromHref(config, href) {
+  let target;
+  let snapshotsUrl;
+  try {
+    snapshotsUrl = new URL(joinUrl(config.baseUrl, config.backupDir, 'snapshots'));
+    target = new URL(decodeXmlEntities(href), snapshotsUrl);
+  } catch (_) {
+    return null;
+  }
+  if (target.origin !== snapshotsUrl.origin) return null;
+  let targetPath;
+  let snapshotsPath;
+  try {
+    targetPath = decodeURIComponent(target.pathname).replace(/\/+$/, '');
+    snapshotsPath = decodeURIComponent(snapshotsUrl.pathname).replace(/\/+$/, '');
+  } catch (_) {
+    return null;
+  }
+  if (!targetPath.startsWith(`${snapshotsPath}/`)) return null;
+  const name = targetPath.slice(snapshotsPath.length + 1);
+  if (!name || name.includes('/') || name === 'latest.json' || !name.endsWith('.json')) return null;
+  return name;
+}
+
+async function listLegacySnapshotNames(config) {
+  const propfindBody = '<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>';
+  const res = await webdavRequest(
+    'PROPFIND',
+    joinUrl(config.baseUrl, config.backupDir, 'snapshots'),
+    config,
+    propfindBody,
+    { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8', 'Content-Length': Buffer.byteLength(propfindBody) },
+  );
+  if (res.statusCode === 404) return [];
+  if (![200, 207].includes(res.statusCode)) {
+    throw new Error(`读取旧快照目录失败（HTTP ${res.statusCode}）`);
+  }
+  const names = [];
+  const hrefPattern = /<(?:[A-Za-z0-9_-]+:)?href\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z0-9_-]+:)?href>/gi;
+  for (const match of String(res.body || '').matchAll(hrefPattern)) {
+    const name = snapshotNameFromHref(config, match[1]);
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names.sort();
+}
+
+function snapshotMonthFromLegacy(manifest, filename) {
+  if (manifest?.createdAt) {
+    try { return snapshotMonthFor(manifest.createdAt); } catch (_) {}
+  }
+  const match = /^(\d{4})(\d{2})\d{2}-\d{6}(?:-[a-f0-9]+)?\.json$/i.exec(filename);
+  const month = Number(match?.[2]);
+  if (!match || month < 1 || month > 12) {
+    throw new Error(`无法从旧快照确定月份：${filename}`);
+  }
+  return `${match[1]}-${match[2]}`;
+}
+
+function snapshotsMatch(left, right) {
+  return !!left && !!right && left.type === 'snapshot' && right.type === 'snapshot' &&
+    left.snapshotId === right.snapshotId && left.createdAt === right.createdAt &&
+    left.database?.hash === right.database?.hash &&
+    JSON.stringify(left.notes || []) === JSON.stringify(right.notes || []);
+}
+
+async function copyRemote(config, sourcePath, destinationPath) {
+  const res = await webdavRequest(
+    'COPY',
+    joinUrl(config.baseUrl, config.backupDir, sourcePath),
+    config,
+    null,
+    {
+      Destination: joinUrl(config.baseUrl, config.backupDir, destinationPath),
+      Overwrite: 'F',
+    },
+  );
+  if (![200, 201, 204].includes(res.statusCode)) {
+    throw new Error(`复制快照到月份目录失败（HTTP ${res.statusCode}）：${sourcePath}`);
+  }
+}
+
+async function deleteRemote(config, relativePath) {
+  const res = await webdavRequest('DELETE', joinUrl(config.baseUrl, config.backupDir, relativePath), config);
+  if (![200, 204, 404].includes(res.statusCode)) {
+    throw new Error(`清理重复旧快照失败（HTTP ${res.statusCode}）：${relativePath}`);
+  }
+}
+
+async function updateLatestSnapshotPath(config, latest, snapshotPath) {
+  const updated = { ...latest, snapshotPath };
+  const body = Buffer.from(JSON.stringify(updated, null, 2) + '\n', 'utf8');
+  const res = await webdavRequest(
+    'PUT',
+    joinUrl(config.baseUrl, config.backupDir, 'latest.json'),
+    config,
+    body,
+    { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length },
+  );
+  if (![200, 201, 204].includes(res.statusCode)) {
+    throw new Error(`更新最新快照指针失败（HTTP ${res.statusCode}）`);
+  }
+}
+
+async function migrateSnapshotFolders(config = getBackupConfig(), options = {}) {
+  if (!config.configured) {
+    throw new Error('坚果云 WebDAV 未配置完整，请填写账号和应用密码');
+  }
+  const apply = options.apply === true;
+  const latest = await getRemoteJson(config, 'latest.json');
+  const names = await listLegacySnapshotNames(config);
+  const plans = [];
+  for (const name of names) {
+    const sourcePath = `snapshots/${name}`;
+    const manifest = await getRemoteJson(config, sourcePath);
+    if (!manifest) throw new Error(`旧快照在检查期间消失：${sourcePath}`);
+    validateRestoreManifest(manifest);
+    const month = snapshotMonthFromLegacy(manifest, name);
+    const destinationPath = `snapshots/${month}/${name}`;
+    const destinationManifest = await getRemoteJson(config, destinationPath);
+    if (destinationManifest) {
+      validateRestoreManifest(destinationManifest);
+      if (!snapshotsMatch(manifest, destinationManifest)) {
+        throw new Error(`目标月份目录已有不同内容，迁移已停止：${destinationPath}`);
+      }
+    }
+    plans.push({ sourcePath, destinationPath, month, action: destinationManifest ? 'remove-duplicate' : 'move' });
+  }
+  const latestPlan = plans.find(plan => plan.sourcePath === latest?.snapshotPath);
+  const latestPathUpdate = latestPlan
+    ? { from: latestPlan.sourcePath, to: latestPlan.destinationPath }
+    : null;
+
+  if (!apply) {
+    return {
+      success: true,
+      dryRun: true,
+      legacyCount: plans.length,
+      moveCount: plans.filter(plan => plan.action === 'move').length,
+      duplicateCount: plans.filter(plan => plan.action === 'remove-duplicate').length,
+      latestPathUpdate,
+      months: [...new Set(plans.map(plan => plan.month))],
+      plans,
+    };
+  }
+
+  const months = [...new Set(plans.map(plan => plan.month))];
+  await ensureRemoteDirs(config, months.map(month => `${config.backupDir}/snapshots/${month}`));
+  for (const plan of plans.filter(item => item.action === 'move')) {
+    await copyRemote(config, plan.sourcePath, plan.destinationPath);
+  }
+  if (latestPathUpdate && latest?.type === 'latest-pointer') {
+    await updateLatestSnapshotPath(config, latest, latestPathUpdate.to);
+  }
+  for (const plan of plans) await deleteRemote(config, plan.sourcePath);
+  return {
+    success: true,
+    dryRun: false,
+    legacyCount: plans.length,
+    moveCount: plans.filter(plan => plan.action === 'move').length,
+    duplicateCount: plans.filter(plan => plan.action === 'remove-duplicate').length,
+    latestPathUpdate,
+    months,
+    plans,
+  };
 }
 
 async function remoteObjectMatches(config, relativePath, localCompressed) {
@@ -510,15 +695,17 @@ async function uploadBackup(paths, config = getBackupConfig()) {
     throw new Error('坚果云 WebDAV 未配置完整，请填写账号和应用密码');
   }
   const startedAt = Date.now();
+  const createdAt = new Date();
+  const snapshotMonth = snapshotMonthFor(createdAt);
   await ensureRemoteDirs(config, [
     config.backupDir,
     `${config.backupDir}/objects/database`,
     `${config.backupDir}/objects/notes`,
     `${config.backupDir}/snapshots`,
+    `${config.backupDir}/snapshots/${snapshotMonth}`,
   ]);
 
   const previous = await readPreviousSnapshot(config);
-  const createdAt = new Date();
   const { manifest, dbContent, notes, snapshotPath, latestPath } = buildSnapshot(paths, createdAt);
   const uploaded = [];
   const reused = [];
@@ -605,4 +792,5 @@ module.exports = {
   testBackupConfig,
   uploadBackup,
   restoreBackup,
+  migrateSnapshotFolders,
 };

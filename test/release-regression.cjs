@@ -339,6 +339,12 @@ async function testCloudBackup() {
   };
   const context = createCloudContext(requestImpl);
 
+  const generatedSnapshotPath = vm.runInContext(
+    "snapshotPathFor(new Date(2026, 8, 8, 12, 34, 56), 'snapshot-test')",
+    context,
+  );
+  assert.equal(generatedSnapshotPath, 'snapshots/2026-09/snapshot-test.json', '新快照应按月份归档');
+
   const dbContent = Buffer.from('synthetic database bytes');
   const noteContent = Buffer.from('# synthetic note\n');
   const databaseHash = hash(dbContent);
@@ -432,6 +438,75 @@ async function testCloudBackup() {
     "putObjectIfMissing({baseUrl:'https://mock.invalid/dav/',backupDir:'audit',username:'u',password:'p'},'objects/a.gz',Buffer.from('not gzip'),'application/gzip')",
     invalidConflict,
   ), /冲突|远程/);
+
+  const legacyName = '20260808-123456-abcd1234.json';
+  const migrationObjects = new Map();
+  const migrationRequests = [];
+  const legacyManifest = {
+    ...manifest,
+    snapshotId: 'legacy-snapshot',
+    createdAt: '2026-08-08T04:34:56.000Z',
+  };
+  migrationObjects.set(remoteKey(`snapshots/${legacyName}`), Buffer.from(json(legacyManifest)));
+  migrationObjects.set(remoteKey('latest.json'), Buffer.from(json({
+    schemaVersion: 2,
+    app: 'todo-app',
+    type: 'latest-pointer',
+    snapshotPath: `snapshots/${legacyName}`,
+    databaseHash,
+  })));
+  const migrationContext = createCloudContext(async (method, targetUrl, _config, body, headers = {}, options = {}) => {
+    const url = new URL(targetUrl);
+    const key = url.pathname;
+    migrationRequests.push({ method, key });
+    if (method === 'PROPFIND') {
+      const legacyPaths = [...migrationObjects.keys()]
+        .filter(item => new RegExp(`/dav/audit/snapshots/[^/]+\\.json$`).test(item));
+      const hrefs = ['/dav/audit/snapshots/', ...legacyPaths];
+      return {
+        statusCode: 207,
+        body: `<d:multistatus xmlns:d="DAV:">${hrefs.map(href => `<d:response><d:href>${href}</d:href></d:response>`).join('')}</d:multistatus>`,
+      };
+    }
+    if (method === 'MKCOL') return { statusCode: 201, body: '' };
+    if (method === 'PUT') {
+      migrationObjects.set(key, Buffer.from(body || ''));
+      return { statusCode: 200, body: '' };
+    }
+    if (method === 'COPY') {
+      const destination = new URL(headers.Destination).pathname;
+      const value = migrationObjects.get(key);
+      if (!value) return { statusCode: 404, body: '' };
+      if (migrationObjects.has(destination)) return { statusCode: 412, body: 'exists' };
+      migrationObjects.set(destination, value);
+      return { statusCode: 201, body: '' };
+    }
+    if (method === 'DELETE') {
+      migrationObjects.delete(key);
+      return { statusCode: 204, body: '' };
+    }
+    if (!migrationObjects.has(key)) return { statusCode: 404, body: options.binary ? Buffer.alloc(0) : '' };
+    const value = migrationObjects.get(key);
+    if (method === 'HEAD') return { statusCode: 200, body: '' };
+    return { statusCode: 200, body: options.binary ? Buffer.from(value) : value.toString('utf8') };
+  });
+  const migrationConfig = { ...config };
+  const preview = await migrationContext.migrateSnapshotFolders(migrationConfig, { apply: false });
+  assert.equal(preview.legacyCount, 1, '迁移预览应发现根目录旧快照');
+  assert.equal(preview.moveCount, 1, '迁移预览应生成移动计划');
+  assert.equal(preview.plans[0].destinationPath, `snapshots/2026-08/${legacyName}`);
+  assert.equal(preview.latestPathUpdate.to, `snapshots/2026-08/${legacyName}`, '迁移预览应包含 latest 指针更新');
+  assert(migrationObjects.has(remoteKey(`snapshots/${legacyName}`)), '预览不得移动旧快照');
+
+  const migrated = await migrationContext.migrateSnapshotFolders(migrationConfig, { apply: true });
+  assert.equal(migrated.moveCount, 1, '迁移应移动旧快照');
+  assert.equal(migrationObjects.has(remoteKey(`snapshots/${legacyName}`)), false, '迁移后旧路径应消失');
+  assert(migrationObjects.has(remoteKey(`snapshots/2026-08/${legacyName}`)), '迁移后应存在月份目录快照');
+  assert.equal(JSON.parse(migrationObjects.get(remoteKey('latest.json')).toString()).snapshotPath, `snapshots/2026-08/${legacyName}`, '迁移后 latest 指针应指向新路径');
+  assert(migrationRequests.some(item => item.method === 'COPY'), '迁移应先复制到月份目录');
+  assert(migrationRequests.some(item => item.method === 'DELETE'), '迁移应在指针更新后删除旧路径');
+  const secondRun = await migrationContext.migrateSnapshotFolders(migrationConfig, { apply: true });
+  assert.equal(secondRun.legacyCount, 0, '迁移脚本应可重复执行');
 }
 
 async function testFrontend() {
@@ -455,9 +530,12 @@ async function testFrontend() {
   assert.match(html, /\.todo-priority-tag \{[\s\S]*justify-content: center;/, '重要程度文字应在标签内居中');
   assert.match(html, /\.todo-priority-tag \.priority-dot \{[\s\S]*position: absolute;/, '重要程度圆点不应影响文字居中');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.add-row \{[\s\S]*display: grid;[\s\S]*grid-template-columns: minmax\(0, 3fr\) minmax\(0, 3fr\) minmax\(0, 2fr\);[\s\S]*\.add-input \{ grid-column: 1 \/ -1;/, '移动端分类、重要程度和添加按钮应按 3:3:2 比例保持同一行');
-  assert.match(html, /\.cat-picker-btn #catPickerLabel \{[\s\S]*position: absolute;[\s\S]*inset: 0 24px 0 0;[\s\S]*justify-content: center;[\s\S]*gap: 6px;[\s\S]*padding: 0 12px;/, '分类按钮图标和文字应在箭头之外居中');
+  assert.match(html, /\.cat-picker-btn \{[\s\S]*flex: 0 1 auto;[\s\S]*width: fit-content;[\s\S]*min-width: 112px;[\s\S]*max-width: 200px;/, '分类按钮应按内容动态调整宽度并保留合理边界');
+  assert.match(html, /\.cat-picker-btn #catPickerLabel \{[\s\S]*position: static;[\s\S]*justify-content: center;[\s\S]*gap: 6px;[\s\S]*padding: 0;/, '分类按钮图标和文字应保持整体居中');
   assert.match(html, /\.cat-picker-btn #catPickerLabel \.ui-icon \{[\s\S]*position: static;/, '分类图标应随文字一起居中');
-  assert.match(html, /\.cat-picker-btn \.arrow \{[\s\S]*position: absolute;[\s\S]*right: 12px;/, '分类下拉箭头应固定在右侧');
+  assert.match(html, /\.cat-picker-btn \.arrow \{[\s\S]*position: static;[\s\S]*flex: 0 0 auto;/, '分类下拉箭头应与内容保持稳定对齐');
+  assert.match(html, /\.category-icon-slot \{[\s\S]*display: inline-flex;[\s\S]*align-items: center;[\s\S]*justify-content: center;/, '分类图标应使用统一的对齐槽位');
+  assert.match(html, /max-width: 920px;/, '主内容区应适度利用右侧空间');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-meta \{[\s\S]*align-items: center;[\s\S]*flex-direction: row;[\s\S]*flex-wrap: nowrap;[\s\S]*overflow-x: auto;/, '移动端元信息应保持横向单行并垂直居中');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-labels \{[\s\S]*flex: 0 0 auto;[\s\S]*flex-wrap: nowrap;/, '移动端标签组应保持横向单行');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-dates \{[\s\S]*width: auto;[\s\S]*flex: 1 1 auto;[\s\S]*display: flex;[\s\S]*flex-direction: row;[\s\S]*align-items: center;[\s\S]*justify-content: flex-end;/, '移动端日期应与标签同排并保持中心线对齐');
@@ -473,6 +551,14 @@ async function testFrontend() {
   assert.match(html, /\.edit-input \{[\s\S]*top: 50%;[\s\S]*height: calc\(100% \+ 2px\);[\s\S]*transform: translateY\(-50%\);[\s\S]*display: block;/, '编辑输入框应在固定标题区域内垂直对齐');
   assert.match(html, /<textarea[\s\S]*class="edit-input"/);
   assert.doesNotMatch(html, /<div class="todo-text[^>]*onclick=/);
+  assert.match(html, /html\.modal-scroll-locked \{[\s\S]*overflow: hidden;/, '打开弹窗时应锁定根页面滚动');
+  assert.match(html, /body\.modal-scroll-locked \{[\s\S]*position: fixed;[\s\S]*overflow: hidden;/, '打开弹窗时 body 应固定在原滚动位置');
+  assert.match(html, /function lockModalScroll\([\s\S]*function unlockModalScroll\(/, '弹窗滚动锁应支持打开和关闭恢复');
+  assert.match(html, /overlay\.addEventListener\('wheel', preventBackdropScroll, \{ passive: false \}\)/, '遮罩层滚轮不得继续滚动底层页面');
+  assert.match(html, /overlay\.addEventListener\('touchmove', preventBackdropScroll, \{ passive: false \}\)/, '移动端遮罩层触摸滚动不得穿透');
+  assert.match(html, /\.modal-overlay \{[\s\S]*overscroll-behavior: contain;/, '遮罩层应阻止滚动链传递');
+  assert.match(html, /\.note-body \{[\s\S]*overscroll-behavior: contain;/, 'Markdown 内容区应独立滚动');
+  assert.match(html, /\.settings-modal \{[\s\S]*overflow-y: auto;[\s\S]*overscroll-behavior: contain;/, '设置内容区应独立滚动');
 
   const loadStart = html.indexOf('  async function loadNote(');
   const loadEnd = html.indexOf('  function setNoteMode(', loadStart);
@@ -538,6 +624,7 @@ async function testFrontend() {
         'reminder no-op/concurrency/stale-state protection',
         'WebDAV response and gzip limits',
         '409 content verification and safe restore publish',
+        'monthly snapshot paths and idempotent legacy migration',
         'note race/loading guard and fixed edit layout',
       ],
       tempDirectory: TEMP_ROOT,
