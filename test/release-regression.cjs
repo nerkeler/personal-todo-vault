@@ -551,6 +551,14 @@ async function testFrontend() {
   assert.match(html, /\.edit-input \{[\s\S]*top: 50%;[\s\S]*height: calc\(100% \+ 2px\);[\s\S]*transform: translateY\(-50%\);[\s\S]*display: block;/, '编辑输入框应在固定标题区域内垂直对齐');
   assert.match(html, /<textarea[\s\S]*class="edit-input"/);
   assert.doesNotMatch(html, /<div class="todo-text[^>]*onclick=/);
+  assert.match(html, /html\.modal-scroll-locked \{[\s\S]*overflow: hidden;/, '打开弹窗时应锁定根页面滚动');
+  assert.match(html, /body\.modal-scroll-locked \{[\s\S]*position: fixed;[\s\S]*overflow: hidden;/, '打开弹窗时 body 应固定在原滚动位置');
+  assert.match(html, /function lockModalScroll\([\s\S]*function unlockModalScroll\(/, '弹窗滚动锁应支持打开和关闭恢复');
+  assert.match(html, /overlay\.addEventListener\('wheel', preventBackdropScroll, \{ passive: false \}\)/, '遮罩层滚轮不得继续滚动底层页面');
+  assert.match(html, /overlay\.addEventListener\('touchmove', preventBackdropScroll, \{ passive: false \}\)/, '移动端遮罩层触摸滚动不得穿透');
+  assert.match(html, /\.modal-overlay \{[\s\S]*overscroll-behavior: contain;/, '遮罩层应阻止滚动链传递');
+  assert.match(html, /\.note-body \{[\s\S]*overscroll-behavior: contain;/, 'Markdown 内容区应独立滚动');
+  assert.match(html, /\.settings-modal \{[\s\S]*overflow-y: auto;[\s\S]*overscroll-behavior: contain;/, '设置内容区应独立滚动');
 
   const loadStart = html.indexOf('  async function loadNote(');
   const loadEnd = html.indexOf('  function setNoteMode(', loadStart);

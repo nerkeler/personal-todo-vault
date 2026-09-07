@@ -64,6 +64,15 @@
       overflow: visible;
     }
 
+    /* Keep the document behind an open modal at a stable scroll position. */
+    html.modal-scroll-locked { overflow: hidden; }
+    body.modal-scroll-locked {
+      position: fixed;
+      inset-inline: 0;
+      width: 100%;
+      overflow: hidden;
+    }
+
     /* ── Layout ── */
     .layout {
       display: flex;
@@ -1089,6 +1098,7 @@
       justify-content: center;
       align-items: center;
       padding: 20px;
+      overscroll-behavior: contain;
     }
     .modal-overlay.show { display: flex; animation: modalOverlayIn 0.22s ease-out both; }
     .modal-overlay.closing { display: flex; animation: modalOverlayOut 0.16s ease-in both; pointer-events: none; }
@@ -1100,6 +1110,7 @@
       width: 100%;
       max-width: 420px;
       box-shadow: var(--shadow-lg);
+      overscroll-behavior: contain;
     }
     .modal-overlay.show:not(.origin-motion) .modal { animation: modalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both; }
     .modal-overlay.closing:not(.origin-motion) .modal { animation: modalOut 0.16s ease-in both; }
@@ -1327,7 +1338,7 @@
     .modal-input:focus { border-color: var(--primary); }
 
     /* Reminder modal */
-    .reminder-modal { max-width: 480px; max-height: calc(100vh - 40px); overflow-y: auto; padding: 26px; }
+    .reminder-modal { max-width: 480px; max-height: calc(100vh - 40px); overflow-y: auto; overscroll-behavior: contain; padding: 26px; }
     .reminder-modal-head {
       display: flex;
       align-items: flex-start;
@@ -1422,6 +1433,7 @@
       max-width: 760px;
       max-height: 88vh;
       overflow-y: auto;
+      overscroll-behavior: contain;
     }
     .settings-hint {
       margin: -6px 0 16px;
@@ -1740,7 +1752,7 @@
     .note-tab { border: none; background: transparent; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; color: var(--text-2); font-weight: 500; transition: all 0.15s; }
     .note-tab.active { background: var(--surface); color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.12); font-weight: 600; }
     .note-save-status { font-size: 0.75rem; color: var(--text-3); }
-    .note-body { flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 0; scrollbar-width: thin; }
+    .note-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 0; scrollbar-width: thin; }
     .note-editor {
       display: none;
       width: min(794px, 100%);
@@ -1788,7 +1800,7 @@
       box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
       overflow-wrap: break-word;
     }
-    .help-modal .note-preview-wrap { overflow-y: auto; }
+    .help-modal .note-preview-wrap { overflow-y: auto; overscroll-behavior: contain; }
 
     /* Markdown preview typography */
     .note-preview-wrap h1, .note-preview-wrap h2, .note-preview-wrap h3, .note-preview-wrap h4 { margin: 1.1em 0 0.5em; line-height: 1.35; font-weight: 700; }
@@ -2440,6 +2452,7 @@
   let themeDarkStart = '19:00';
   let themeMediaQuery = null;
   let themeScheduleTimer = null;
+  let modalScrollState = null;
 
   const PRESET_ICONS = [
     '🏷️','📋','📥','📌','📍','💰','💎','💳','🎬','🎥','🎞️','📺',
@@ -2456,6 +2469,7 @@
     initTheme();
     initSettingsDisclosure();
     initSidebarWidth();
+    initModalScrollGuards();
     renderAddPriorityLabel();
     loadData();
     initIconGrid();
@@ -2550,11 +2564,57 @@
     if (panel) panel.style.removeProperty('transform-origin');
   }
 
+  function hasOpenModal() {
+    return [...document.querySelectorAll('.modal-overlay')].some(modal =>
+      modal.classList.contains('show') || modal.classList.contains('closing'));
+  }
+
+  function lockModalScroll() {
+    if (modalScrollState) return;
+    const body = document.body;
+    const html = document.documentElement;
+    const scrollY = window.scrollY || html.scrollTop || 0;
+    const scrollbarWidth = Math.max(0, window.innerWidth - html.clientWidth);
+    modalScrollState = {
+      scrollY,
+      top: body.style.top,
+      paddingRight: body.style.paddingRight,
+    };
+    html.classList.add('modal-scroll-locked');
+    body.classList.add('modal-scroll-locked');
+    body.style.top = `-${scrollY}px`;
+    if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`;
+  }
+
+  function unlockModalScroll() {
+    if (!modalScrollState) return;
+    const body = document.body;
+    const html = document.documentElement;
+    const { scrollY, top, paddingRight } = modalScrollState;
+    modalScrollState = null;
+    html.classList.remove('modal-scroll-locked');
+    body.classList.remove('modal-scroll-locked');
+    body.style.top = top;
+    body.style.paddingRight = paddingRight;
+    window.scrollTo(0, scrollY);
+  }
+
+  function initModalScrollGuards() {
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      const preventBackdropScroll = event => {
+        if (!event.target.closest('.modal')) event.preventDefault();
+      };
+      overlay.addEventListener('wheel', preventBackdropScroll, { passive: false });
+      overlay.addEventListener('touchmove', preventBackdropScroll, { passive: false });
+    });
+  }
+
   function finishModalClose(modal) {
     clearModalMotion(modal);
     modal.classList.remove('show', 'closing', 'origin-motion', 'motion-ready');
     modal._motionSource = null;
     modal._hideTimer = null;
+    if (!hasOpenModal()) unlockModalScroll();
   }
 
   function getModalOrigin(modal, source) {
@@ -2573,6 +2633,7 @@
   function showModal(id, source = null) {
     const modal = document.getElementById(id);
     if (!modal) return;
+    lockModalScroll();
     if (modal._hideTimer != null) {
       window.clearTimeout(modal._hideTimer);
       modal._hideTimer = null;
