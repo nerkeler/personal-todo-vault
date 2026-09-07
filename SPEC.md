@@ -84,6 +84,7 @@ Markdown 预览会先转义文本，再应用有限的格式化规则；链接�
   "categoryId": "cat_default",
   "completed": false,
   "progress": 0,
+  "priority": 0,
   "createdAt": "2026-08-09T00:00:00.000Z",
   "reminderEnabled": false,
   "reminderTime": "09:00",
@@ -107,8 +108,8 @@ Markdown 预览会先转义文本，再应用有限的格式化规则；链接�
 - `DELETE /api/categories/:id`
 - `PATCH /api/categories/reorder`：`{ order: [categoryId, ...] }`
 - `GET /api/todos?categoryId=...`
-- `POST /api/todos`：`{ title, categoryId }`
-- `PATCH /api/todos/:id`：更新标题、分类、完成状态、进度或提醒
+- `POST /api/todos`：`{ title, categoryId, priority? }`
+- `PATCH /api/todos/:id`：更新标题、分类、完成状态、进度、重要程度或提醒
 - `DELETE /api/todos/:id`
 - `GET /api/todos/:id/note`
 - `PUT /api/todos/:id/note`：`{ content }`
@@ -120,7 +121,7 @@ Markdown 预览会先转义文本，再应用有限的格式化规则；链接�
 - `POST /api/backup/run`
 - `GET /api/icons`
 
-提醒规则：`reminderMode` 可设为 `once`、`weekly` 或 `count`。星期使用 ISO 编号：1=周一，…，7=周日。`weekly`/`count` 至少选择一个星期；`count` 需要设置 1–1000 的重复次数。每条待办每天最多发送一次；已完成待办不会继续发送提醒。重新开启或修改规则会从第 1 次重新计数。
+提醒规则：`reminderMode` 可设为 `once`、`weekly` 或 `count`。星期使用 ISO 编号：1=周一，…，7=周日。`weekly`/`count` 至少选择一个星期；`count` 需要设置 1–1000 的重复次数。每条待办每天最多发送一次；已完成待办不会继续发送提醒。重新开启或修改规则会从第 1 次重新计数。`priority` 只能是 0（普通）、1（重要）或 2（紧急）。
 
 ## 7. 工程结构
 

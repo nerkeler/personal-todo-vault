@@ -51,6 +51,7 @@ async function initDB() {
     completed INTEGER DEFAULT 0,
     category_id TEXT,
     progress INTEGER DEFAULT 0,
+    priority INTEGER DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     reminder_enabled INTEGER DEFAULT 0,
@@ -78,6 +79,7 @@ async function initDB() {
   const colNames = (cols[0]?.values || []).map(r => r[1]);
   const migrations = [
     ['updated_at', "ALTER TABLE todos ADD COLUMN updated_at TEXT DEFAULT ''"],
+    ['priority', "ALTER TABLE todos ADD COLUMN priority INTEGER DEFAULT 0"],
     ['note_file', "ALTER TABLE todos ADD COLUMN note_file TEXT DEFAULT ''"],
     ['reminder_mode', "ALTER TABLE todos ADD COLUMN reminder_mode TEXT DEFAULT 'once'"],
     ['reminder_weekdays', "ALTER TABLE todos ADD COLUMN reminder_weekdays TEXT DEFAULT '[]'"],
@@ -91,6 +93,9 @@ async function initDB() {
 
   // 旧数据没有更新时间时，用创建时间作为初始值。
   db.run("UPDATE todos SET updated_at=created_at WHERE updated_at IS NULL OR updated_at=''");
+
+  // 重要程度只允许普通、重要、紧急三个级别；旧数据统一按普通处理。
+  db.run('UPDATE todos SET priority=0 WHERE priority IS NULL OR priority NOT IN (0, 1, 2)');
 
   // 已完成任务不保留可发送的提醒状态，兼容升级前已经完成的任务。
   db.run('UPDATE todos SET reminder_enabled=0 WHERE completed=1');
@@ -243,6 +248,9 @@ function getTodos(categoryId) {
     title: r.title,
     categoryId: r.category_id,
     progress: Number.isInteger(r.progress) ? r.progress : 0,
+    priority: Number.isInteger(Number(r.priority)) && Number(r.priority) >= 0 && Number(r.priority) <= 2
+      ? Number(r.priority)
+      : 0,
     createdAt: r.created_at || null,
     updatedAt: r.updated_at || r.created_at || null,
     completed: !!r.completed,
@@ -258,11 +266,14 @@ function getTodos(categoryId) {
   }));
 }
 
-function createTodo(title, categoryId = 'cat_default') {
+function createTodo(title, categoryId = 'cat_default', priority = 0) {
   const id = require('crypto').randomBytes(8).toString('hex') + require('crypto').randomBytes(4).toString('hex');
   const now = new Date().toISOString();
-  db.run(`INSERT INTO todos (id, title, completed, category_id, progress, created_at, updated_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
-    VALUES (?, ?, 0, ?, 0, ?, ?, 0, '', 'once', '[]', 1, 0, '', '', '')`, [id, title, categoryId, now, now]);
+  const safePriority = Number.isInteger(Number(priority)) && Number(priority) >= 0 && Number(priority) <= 2
+    ? Number(priority)
+    : 0;
+  db.run(`INSERT INTO todos (id, title, completed, category_id, progress, priority, created_at, updated_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
+    VALUES (?, ?, 0, ?, 0, ?, ?, ?, 0, '', 'once', '[]', 1, 0, '', '', '')`, [id, title, categoryId, safePriority, now, now]);
   saveDB();
   return getTodos().find(t => t.id === id);
 }
@@ -276,6 +287,7 @@ function updateTodo(id, kwargs, options = {}) {
     completed: 'completed',
     categoryId: 'category_id',
     progress: 'progress',
+    priority: 'priority',
     reminderEnabled: 'reminder_enabled',
     reminderTime: 'reminder_time',
     reminderMode: 'reminder_mode',
@@ -290,6 +302,9 @@ function updateTodo(id, kwargs, options = {}) {
     if (kwargs[jsKey] !== undefined) {
       let val = kwargs[jsKey];
       if (typeof val === 'boolean') val = val ? 1 : 0;
+      if (jsKey === 'priority') {
+        val = Number.isInteger(Number(val)) && Number(val) >= 0 && Number(val) <= 2 ? Number(val) : 0;
+      }
       if (jsKey === 'reminderWeekdays') val = JSON.stringify(Array.isArray(val) ? val : []);
       fields.push(`${dbKey}=?`);
       values.push(val);
@@ -387,6 +402,9 @@ function migrateFromJSON(jsonFile, persist = true) {
   for (const todo of (data.todos || [])) {
     try {
       const reminderEnabled = !todo.completed && (todo.reminderEnabled ?? todo.reminder_enabled ?? false);
+      const priority = Number.isInteger(Number(todo.priority)) && Number(todo.priority) >= 0 && Number(todo.priority) <= 2
+        ? Number(todo.priority)
+        : 0;
       const reminderTime = todo.reminderTime ?? todo.reminder_time ?? '';
       const reminderMode = ['once', 'weekly', 'count'].includes(todo.reminderMode) ? todo.reminderMode : 'once';
       const reminderWeekdays = JSON.stringify(parseReminderWeekdays(todo.reminderWeekdays ?? todo.reminder_weekdays));
@@ -398,10 +416,10 @@ function migrateFromJSON(jsonFile, persist = true) {
       const createdAt = todo.createdAt ?? todo.created_at ?? '';
       const updatedAt = todo.updatedAt ?? todo.updated_at ?? createdAt;
       db.run(`INSERT OR IGNORE INTO todos
-        (id, title, completed, category_id, progress, created_at, updated_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, title, completed, category_id, progress, priority, created_at, updated_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [todo.id, todo.title, todo.completed ? 1 : 0,
-         todo.categoryId || 'cat_default', todo.progress || 0,
+         todo.categoryId || 'cat_default', todo.progress || 0, priority,
          createdAt, updatedAt, reminderEnabled ? 1 : 0,
          reminderTime, reminderMode, reminderWeekdays, reminderRepeatCount, reminderSentCount,
          reminderLastSentAt, creatorEmail, noteFile]);
