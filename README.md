@@ -244,7 +244,7 @@ todo-app-backups/
 - `todo.db` 和每个 Markdown 笔记独立计算 SHA-256；只有新内容或变更内容上传，未变化对象会复用。
 - 每次备份生成一份完整快照清单，并按 `snapshots/YYYY-MM/` 归档；`latest.json` 指向最新快照。
 - 删除的笔记不会出现在最新快照中；历史快照和对象默认保留，便于保留历史版本。
-- 这是**单向备份**，不是双向同步。请不要直接在坚果云目录中编辑对象文件。
+- “立即备份”和自动备份是本地到云端的单向上传；配置中心的“与云端同步”会在校验后合并两边的数据。请不要直接在坚果云目录中编辑对象文件。
 - 备份对象只做 gzip 压缩和 SHA-256 完整性校验，**不提供加密**；坚果云目录中的数据库和 Markdown 内容应按明文敏感数据保护。
 - WebDAV 密码和本机配置密钥不会上传到坚果云。
 
@@ -312,6 +312,8 @@ TODO_RESTORE_MAX_BYTES=134217728
 - 只有确认要重新生成数据库时才使用 `npm run migrate -- --force`；覆盖前会把原数据库备份到 `TODO_BACKUP_DIR`（默认 `/data/backups`）。
 - 脚本使用当前完整 SQLite 结构、校验源数据并原子写入；本地服务保存数据库时也采用临时文件、`fsync` 和原子替换，并保留最近 10 份滚动备份。
 - 坚果云备份提供增量上传与按月归档的完整快照清单；备份对象是 gzip + SHA-256 校验格式，**不是加密备份**。
+- 配置中心的“与云端同步”会先完整校验远程快照，再合并本地与云端的待办和 Markdown；双方独有内容都会保留，同一待办按更新时间优先，无法判断时保留本地并报告冲突。合并前数据会保存到本地 `backups/sync-时间戳/`，切换失败会自动回滚。
+- 精确覆盖恢复仍由 `/api/backup/restore` 和 `restore.js` 提供，仅适用于明确要用某份快照替换当前数据的场景。
 - 升级已有备份时，先预览旧快照迁移计划，再执行迁移：
 
   ```bash
@@ -347,6 +349,8 @@ TODO_RESTORE_MAX_BYTES=134217728
 | GET | `/api/backup/status` | 获取坚果云备份状态（不返回密码） |
 | POST | `/api/backup/test` | 测试坚果云 WebDAV 配置 |
 | POST | `/api/backup/run` | 立即上传云端备份 |
+| POST | `/api/backup/sync` | 校验并合并本地与最新云端快照，双方新增内容都会保留 |
+| POST | `/api/backup/restore` | 精确覆盖恢复指定云端快照；恢复前数据自动保存到本地安全备份目录 |
 | GET | `/api/icons` | 获取预设分类图标 |
 
 待办 API 使用 camelCase 字段，例如 `categoryId`、`priority`、`createdAt`、`reminderEnabled`、`reminderTime`、`reminderMode`、`reminderWeekdays`、`reminderRepeatCount`、`creatorEmail`、`noteFile`。`priority` 为 0（普通）、1（重要）或 2（紧急）。
@@ -356,7 +360,7 @@ TODO_RESTORE_MAX_BYTES=134217728
 ```text
 todo-app/
 ├── appConfig.js       # 加密的本地配置读取、保存与脱敏输出
-├── cloudBackup.js     # WebDAV 内容寻址增量备份
+├── cloudBackup.js     # WebDAV 内容寻址增量备份与快照恢复
 ├── email.js           # SMTP 邮件与测试邮件
 ├── index.html         # 前端页面（原生 HTML/CSS/JS）
 ├── server.js          # HTTP API、提醒与备份定时器

@@ -90,6 +90,7 @@ function createServerHarness() {
       publicBackupStatus: () => ({ configured: false }),
       testBackupConfig: async () => ({ success: true }),
       uploadBackup: async () => ({ success: true }),
+      restoreBackup: async () => { throw new Error('坚果云 WebDAV 未配置完整，请填写账号和应用密码'); },
     },
   };
   const context = vm.createContext({
@@ -231,6 +232,8 @@ async function testServer() {
   assert.equal((await request(harness, 'GET', '/api/todos', undefined, {
     origin: 'null',
   })).status, 403, 'null Origin 应被拒绝');
+  assert.equal((await request(harness, 'POST', '/api/backup/restore', { snapshot: 'latest' })).status, 500, '未配置云端备份时恢复应明确失败');
+  assert.equal((await request(harness, 'POST', '/api/backup/sync')).status, 500, '未配置云端备份时同步应明确失败');
 
   const priorityCreated = await request(harness, 'POST', '/api/todos', {
     title: 'priority regression',
@@ -530,15 +533,35 @@ async function testFrontend() {
   assert.match(html, /\.todo-priority-tag \{[\s\S]*justify-content: center;/, '重要程度文字应在标签内居中');
   assert.match(html, /\.todo-priority-tag \.priority-dot \{[\s\S]*position: absolute;/, '重要程度圆点不应影响文字居中');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.add-row \{[\s\S]*display: grid;[\s\S]*grid-template-columns: minmax\(0, 3fr\) minmax\(0, 3fr\) minmax\(0, 2fr\);[\s\S]*\.add-input \{ grid-column: 1 \/ -1;/, '移动端分类、重要程度和添加按钮应按 3:3:2 比例保持同一行');
+  assert.match(html, /function toggleCatPicker\([\s\S]*const rect = btn\.getBoundingClientRect\(\);[\s\S]*const edge = 8;[\s\S]*list\.style\.top = \(rect\.bottom \+ 4\) \+ 'px';[\s\S]*const menuHeight = Math\.min\(list\.scrollHeight, parseFloat\(list\.style\.maxHeight\)\);/, '移动端分类下拉框应锚定按钮并在空间不足时翻转');
+  assert.match(html, /function closeCatPicker\([\s\S]*catPickerList[\s\S]*catPickerBtn/, '分类下拉框应提供统一关闭入口');
+  assert.match(html, /function toggleCatPicker\([\s\S]*closePriorityDropdown\(\);[\s\S]*closeMoveDropdown\(\);/, '打开分类下拉框前应关闭其他下拉框');
+  assert.match(html, /function toggleAddPriorityDropdown\([\s\S]*closeCatPicker\(\);/, '打开新增重要程度下拉框前应关闭分类下拉框');
+  assert.match(html, /function togglePriorityDropdown\([\s\S]*closeCatPicker\(\);/, '打开待办重要程度下拉框前应关闭分类下拉框');
+  assert.match(html, /function toggleMoveDropdown\([\s\S]*closeCatPicker\(\);/, '打开待办分类下拉框前应关闭新增分类下拉框');
+  assert.doesNotMatch(html, /@media \(max-width: 768px\) \{[\s\S]*\.cat-picker-list \{[\s\S]*bottom: 0;/, '移动端分类下拉框不应固定在屏幕底部');
   assert.match(html, /\.cat-picker-btn \{[\s\S]*flex: 0 1 auto;[\s\S]*width: fit-content;[\s\S]*min-width: 112px;[\s\S]*max-width: 200px;/, '分类按钮应按内容动态调整宽度并保留合理边界');
   assert.match(html, /\.cat-picker-btn #catPickerLabel \{[\s\S]*position: static;[\s\S]*justify-content: center;[\s\S]*gap: 6px;[\s\S]*padding: 0;/, '分类按钮图标和文字应保持整体居中');
   assert.match(html, /\.cat-picker-btn #catPickerLabel \.ui-icon \{[\s\S]*position: static;/, '分类图标应随文字一起居中');
   assert.match(html, /\.cat-picker-btn \.arrow \{[\s\S]*position: static;[\s\S]*flex: 0 0 auto;/, '分类下拉箭头应与内容保持稳定对齐');
   assert.match(html, /\.category-icon-slot \{[\s\S]*display: inline-flex;[\s\S]*align-items: center;[\s\S]*justify-content: center;/, '分类图标应使用统一的对齐槽位');
   assert.match(html, /max-width: 920px;/, '主内容区应适度利用右侧空间');
-  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-meta \{[\s\S]*align-items: center;[\s\S]*flex-direction: row;[\s\S]*flex-wrap: nowrap;[\s\S]*overflow-x: auto;/, '移动端元信息应保持横向单行并垂直居中');
-  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-labels \{[\s\S]*flex: 0 0 auto;[\s\S]*flex-wrap: nowrap;/, '移动端标签组应保持横向单行');
-  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-dates \{[\s\S]*width: auto;[\s\S]*flex: 1 1 auto;[\s\S]*display: flex;[\s\S]*flex-direction: row;[\s\S]*align-items: center;[\s\S]*justify-content: flex-end;/, '移动端日期应与标签同排并保持中心线对齐');
+  assert.match(html, /class="settings-badge theme-status-badge" id="themeStatusBadge"/, '外观状态应使用已配置风格');
+  assert.match(html, /\.settings-badge\.theme-status-badge \{[\s\S]*background: rgba\(82,196,26,0\.12\);[\s\S]*color: #52c41a;/, '外观状态应与已配置保持绿色配色');
+  assert.match(html, /id="syncBackupBtn" onclick="openBackupSyncModal\(\)"/, '备份设置应提供云端同步入口');
+  assert.match(html, /id="backupSyncModal"[\s\S]*与云端同步[\s\S]*开始同步/, '云端同步应使用应用内确认弹窗');
+  assert.match(html, /function confirmBackupSync\(\)[\s\S]*fetch\(API \+ '\/backup\/sync'/, '同步确认应调用合并同步接口');
+  assert.doesNotMatch(html, /function confirmBackupSync\(\)[\s\S]*\bconfirm\(/, '云端同步不应使用系统 confirm 弹窗');
+  assert.match(html, /本地新增和云端新增都会保留|双方新增内容/, '同步入口应说明双方新增内容都会保留');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-item \{[\s\S]*display: grid;[\s\S]*grid-template-columns: 20px minmax\(0, 1fr\);[\s\S]*row-gap: 6px;[\s\S]*padding: 10px 12px;/, '移动端待办应收紧卡片垂直边距');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-item > \.todo-body \{[\s\S]*display: contents;/, '移动端待办主体应允许标题、进度和元信息参与稳定排版');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-body > \.todo-text,[\s\S]*\.todo-body > \.todo-title-editor \{[\s\S]*grid-column: 2;[\s\S]*grid-row: 2;/, '移动端待办标题应位于顶部操作栏下方');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-actions \{[\s\S]*position: static;[\s\S]*grid-column: 1 \/ -1;[\s\S]*grid-row: 1;[\s\S]*width: 100%;[\s\S]*min-height: 32px;[\s\S]*padding-bottom: 4px;[\s\S]*border-bottom: 1px solid var\(--border\);[\s\S]*justify-content: flex-start;[\s\S]*opacity: 1;/, '移动端顶部操作栏应与标签区同宽并左对齐');
+  assert.match(html, /\.todo-actions \.todo-act-btn\.del \{ order: 1; \}[\s\S]*\.todo-actions \.todo-act-btn\.edit-action \{ order: 2; \}[\s\S]*\.todo-actions \.todo-act-btn\.note-action \{ order: 3; \}[\s\S]*\.todo-actions \.todo-act-btn\.reminder-action \{ order: 4; \}/, '移动端操作按钮应按关闭、编辑、笔记、提醒顺序排列');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-body > \.todo-meta \{[\s\S]*grid-column: 1 \/ -1;[\s\S]*grid-row: 4;/, '移动端元信息应避开顶部操作区并占满卡片宽度');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-meta \{[\s\S]*align-items: stretch;[\s\S]*flex-direction: column;[\s\S]*width: 100%;[\s\S]*overflow: visible;/, '移动端标签和日期应分行避免重叠');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-labels \{[\s\S]*width: 100%;[\s\S]*flex: none;[\s\S]*flex-wrap: wrap;/, '移动端标签组应允许自然换行');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-dates \{[\s\S]*display: none;/, '移动端不应显示创建和更新时间');
   assert.doesNotMatch(html, /meta\.symbol|symbol: '○'|symbol: '◆'|symbol: '!'/, '重要程度标签不应使用不同形状符号');
   assert.match(html, /\.add-priority-btn\.priority-normal \{[\s\S]*background: var\(--bg\);/, '新增待办优先级选择器不应使用彩色背景');
   assert.match(html, /\.add-priority-btn\.priority-normal \{[\s\S]*color: var\(--text\);/, '新增待办优先级文字应使用普通文本色');
