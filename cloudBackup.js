@@ -653,6 +653,12 @@ async function restoreBackup(config = getBackupConfig(), options = {}) {
       snapshotId: manifest.snapshotId,
       databaseHash: manifest.database.hash,
       noteCount: manifest.notes.length,
+      noteDescriptors: manifest.notes.map(note => ({
+        name: note.name,
+        hash: note.hash,
+        size: note.size,
+        mtimeMs: note.mtimeMs,
+      })),
       createdAt: manifest.createdAt,
     };
   } catch (e) {

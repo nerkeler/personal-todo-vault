@@ -7,16 +7,23 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const crypto = require('crypto');
+const initSqlJs = require('./sql-wasm.js');
 
 const PORT = Number(process.env.PORT) || 8238;
 const HOST = process.env.HOST || '127.0.0.1';
 const DB_PY = null; // 不再调用 Python
 const DATA_DIR = process.env.TODO_DATA_DIR || __dirname;
 const NOTES_DIR = process.env.TODO_NOTES_DIR || path.join(DATA_DIR, 'notes');
+const LOCAL_BACKUP_DIR = process.env.TODO_BACKUP_DIR || path.join(DATA_DIR, 'backups');
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_NOTE_BODY_BYTES = 4 * 1024 * 1024;
 const DB_FILE = process.env.TODO_DB_FILE || path.join(DATA_DIR, 'todo.db');
 const BACKUP_PATHS = { rootDir: __dirname, dbFile: DB_FILE, notesDir: NOTES_DIR };
+
+function sha256(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
 
 // ── 环境变量加载（读取 /etc/environment）──────────────────
 // /etc/environment 仅在部分 Linux 环境中存在；本机开发环境缺失时直接跳过。
@@ -55,7 +62,7 @@ const { initDB, closeDB, saveDB,
   getSettings, saveSettings, migrateFromJSON } = require('./sqlite.js');
 const { sendEmail, sendTestEmail } = require('./email.js');
 const { getFullConfig, saveAppConfig, publicAppConfig, isEmailConfigured, migrateStoredConfigSecrets } = require('./appConfig.js');
-const { getBackupConfig, publicBackupStatus, testBackupConfig, uploadBackup } = require('./cloudBackup.js');
+const { getBackupConfig, publicBackupStatus, testBackupConfig, uploadBackup, restoreBackup } = require('./cloudBackup.js');
 
 // ── MIME 类型 ────────────────────────────────────────────
 const MIME = {
@@ -680,6 +687,31 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pathname === '/api/backup/restore' && req.method === 'POST') {
+    withBody(async (payload) => {
+      try {
+        const snapshot = typeof payload.snapshot === 'string' && payload.snapshot.trim()
+          ? payload.snapshot.trim()
+          : 'latest';
+        const result = await restoreBackupToCurrentData(snapshot);
+        jsonResR(result);
+      } catch (e) { jsonResR({ error: e.message }, 500); }
+    });
+    return;
+  }
+
+  if (pathname === '/api/backup/sync' && req.method === 'POST') {
+    try {
+      const result = await syncBackupToCurrentData();
+      lastBackup = result;
+      jsonResR(result);
+    } catch (e) {
+      lastBackup = { success: false, error: e.message, createdAt: new Date().toISOString() };
+      jsonResR({ error: e.message }, 500);
+    }
+    return;
+  }
+
   // ── GET /api/icons ─────────────────────────────────────
   if (pathname === '/api/icons' && req.method === 'GET') {
     jsonResR(PRESET_ICONS); return;
@@ -959,6 +991,7 @@ function stopCron() {
 }
 
 async function runReminderTick() {
+  if (restoreInFlight) return;
   try {
     const emailConfig = getFullConfig().email;
     if (!emailConfig.enabled || !isEmailConfigured(emailConfig)) return;
@@ -988,6 +1021,8 @@ async function runReminderTick() {
           reminderEmail.text,
           { email: emailConfig, html: reminderEmail.html }
         );
+
+        if (restoreInFlight) continue;
 
         // Re-read after SMTP returns. Completion, manual disable, or a rule
         // edit made while sending must win over this old snapshot.
@@ -1025,6 +1060,8 @@ function startCron() {
 let backupTimer = null;
 let lastBackup = null;
 let backupInFlight = null;
+let restoreInFlight = false;
+let syncInFlight = false;
 
 function stopBackupTimer() {
   if (backupTimer) { clearInterval(backupTimer); backupTimer = null; console.log('[BACKUP] stopped'); }
@@ -1048,6 +1085,7 @@ function startBackupTimer() {
 }
 
 async function runBackup() {
+  if (restoreInFlight || syncInFlight) throw new Error('数据同步正在进行，请稍候再备份');
   if (backupInFlight) return backupInFlight;
   backupInFlight = (async () => {
     saveDB();
@@ -1057,6 +1095,409 @@ async function runBackup() {
     return await backupInFlight;
   } finally {
     backupInFlight = null;
+  }
+}
+
+function timestampForRestore() {
+  return new Date().toISOString()
+    .replace(/[-:]/g, '')
+    .replace('T', '-')
+    .replace(/\.\d{3}Z$/, '');
+}
+
+function nextRestorePath(prefix) {
+  const stamp = timestampForRestore();
+  let candidate = path.join(DATA_DIR, `.${prefix}-${stamp}`);
+  let suffix = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(DATA_DIR, `.${prefix}-${stamp}-${suffix++}`);
+  }
+  return candidate;
+}
+
+function nextRestoreSafetyPath(prefix = 'restore') {
+  const stamp = timestampForRestore();
+  let candidate = path.join(LOCAL_BACKUP_DIR, `${prefix}-${stamp}`);
+  let suffix = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(LOCAL_BACKUP_DIR, `${prefix}-${stamp}-${suffix++}`);
+  }
+  return candidate;
+}
+
+function copyRestoreSafetyFiles(safetyDir) {
+  fs.mkdirSync(safetyDir, { recursive: true, mode: 0o700 });
+  if (fs.existsSync(DB_FILE)) {
+    fs.copyFileSync(DB_FILE, path.join(safetyDir, 'todo.db'));
+  }
+  if (fs.existsSync(NOTES_DIR)) {
+    fs.cpSync(NOTES_DIR, path.join(safetyDir, 'notes'), { recursive: true, force: false });
+  }
+}
+
+function moveRestoreEntry(source, target, options = {}) {
+  const isDirectory = options.directory === true;
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  try {
+    fs.renameSync(source, target);
+  } catch (e) {
+    if (e.code !== 'EXDEV') throw e;
+    if (isDirectory) fs.cpSync(source, target, { recursive: true, force: false });
+    else fs.copyFileSync(source, target);
+    fs.rmSync(source, { recursive: isDirectory, force: true });
+  }
+}
+
+function replaceRestoredData(stageDir) {
+  const stageDb = path.join(stageDir, 'todo.db');
+  const stageNotes = path.join(stageDir, 'notes');
+  if (!fs.existsSync(stageDb) || !fs.existsSync(stageNotes)) {
+    throw new Error('恢复目录内容不完整');
+  }
+  if (fs.existsSync(DB_FILE)) fs.rmSync(DB_FILE, { force: true });
+  moveRestoreEntry(stageDb, DB_FILE);
+  if (fs.existsSync(NOTES_DIR)) fs.rmSync(NOTES_DIR, { recursive: true, force: true });
+  moveRestoreEntry(stageNotes, NOTES_DIR, { directory: true });
+}
+
+async function rollbackRestoredData(safetyDir) {
+  try { closeDB(); } catch (_) {}
+  const safetyDb = path.join(safetyDir, 'todo.db');
+  const safetyNotes = path.join(safetyDir, 'notes');
+  fs.rmSync(DB_FILE, { force: true });
+  if (fs.existsSync(safetyDb)) {
+    fs.copyFileSync(safetyDb, DB_FILE);
+  }
+  fs.rmSync(NOTES_DIR, { recursive: true, force: true });
+  if (fs.existsSync(safetyNotes)) {
+    moveRestoreEntry(safetyNotes, NOTES_DIR, { directory: true });
+  }
+  await initDB();
+}
+
+async function restoreBackupToCurrentData(snapshot = 'latest') {
+  if (restoreInFlight) throw new Error('已有恢复任务正在执行，请稍候');
+  if (backupInFlight) throw new Error('备份正在进行，请稍候再恢复');
+  restoreInFlight = true;
+  const stageDir = nextRestorePath('todo-restore');
+  const safetyDir = nextRestoreSafetyPath();
+  let servicesStopped = false;
+  let databaseClosed = false;
+  try {
+    // Download and verify the complete snapshot before touching live data.
+    const restored = await restoreBackup(getBackupConfig(), { snapshot, outputDir: stageDir });
+
+    stopCron();
+    stopBackupTimer();
+    servicesStopped = true;
+    closeDB();
+    databaseClosed = true;
+    copyRestoreSafetyFiles(safetyDir);
+    replaceRestoredData(stageDir);
+    await initDB();
+
+    const config = getFullConfig();
+    if (config.email.enabled && isEmailConfigured(config.email)) startCron();
+    startBackupTimer();
+    servicesStopped = false;
+    const { outputDir: _stageDir, ...restoreSummary } = restored;
+    return {
+      ...restoreSummary,
+      active: true,
+      safetyBackupDir: safetyDir,
+      message: '恢复完成，当前应用已切换到该快照；恢复前数据保存在本地安全备份目录。',
+    };
+  } catch (e) {
+    if (databaseClosed) {
+      try {
+        await rollbackRestoredData(safetyDir);
+      } catch (rollbackError) {
+        throw new Error(`${e.message}；自动回滚失败：${rollbackError.message}`);
+      }
+    }
+    throw e;
+  } finally {
+    try { fs.rmSync(stageDir, { recursive: true, force: true }); } catch (_) {}
+    if (servicesStopped) {
+      const config = getFullConfig();
+      if (config.email.enabled && isEmailConfigured(config.email)) startCron();
+      startBackupTimer();
+    }
+    restoreInFlight = false;
+  }
+}
+
+const TODO_DB_COLUMNS = [
+  'id', 'title', 'completed', 'category_id', 'progress', 'priority',
+  'created_at', 'updated_at', 'reminder_enabled', 'reminder_time',
+  'reminder_mode', 'reminder_weekdays', 'reminder_repeat_count',
+  'reminder_sent_count', 'reminder_last_sent_at', 'creator_email', 'note_file',
+];
+
+function rowsFromDatabase(database, table) {
+  const result = database.exec(`SELECT * FROM ${table}`);
+  if (!result.length) return [];
+  const [{ columns, values }] = result;
+  return values.map(row => Object.fromEntries(columns.map((column, index) => [column, row[index]])));
+}
+
+function normalizeSyncCategory(row) {
+  return {
+    id: String(row.id || ''),
+    name: String(row.name || '未命名分类'),
+    icon: String(row.icon || '📋'),
+    sort_order: Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 0,
+  };
+}
+
+function normalizeSyncTodo(row) {
+  const createdAt = String(row.created_at || new Date(0).toISOString());
+  const progress = Math.max(0, Math.min(100, Number(row.progress) || 0));
+  const priority = [0, 1, 2].includes(Number(row.priority)) ? Number(row.priority) : 0;
+  const reminderMode = ['once', 'weekly', 'count'].includes(row.reminder_mode) ? row.reminder_mode : 'once';
+  return {
+    id: String(row.id || ''),
+    title: String(row.title || ''),
+    completed: row.completed ? 1 : 0,
+    category_id: String(row.category_id || 'cat_default'),
+    progress,
+    priority,
+    created_at: createdAt,
+    updated_at: String(row.updated_at || createdAt),
+    reminder_enabled: row.reminder_enabled ? 1 : 0,
+    reminder_time: String(row.reminder_time || ''),
+    reminder_mode: reminderMode,
+    reminder_weekdays: typeof row.reminder_weekdays === 'string' ? row.reminder_weekdays : '[]',
+    reminder_repeat_count: Math.max(1, Number(row.reminder_repeat_count) || 1),
+    reminder_sent_count: Math.max(0, Number(row.reminder_sent_count) || 0),
+    reminder_last_sent_at: String(row.reminder_last_sent_at || ''),
+    creator_email: String(row.creator_email || ''),
+    note_file: String(row.note_file || ''),
+  };
+}
+
+function syncTodoValues(todo) {
+  return TODO_DB_COLUMNS.map(column => todo[column]);
+}
+
+function syncTodoSignature(todo) {
+  return JSON.stringify(syncTodoValues(todo));
+}
+
+function syncTimestamp(value) {
+  const timestamp = Date.parse(value || '');
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+async function mergeSyncDatabase(localContent, remoteContent) {
+  const SQL = await initSqlJs({ locateFile: file => path.join(__dirname, file) });
+  const localDb = new SQL.Database(localContent);
+  const remoteDb = new SQL.Database(remoteContent);
+  try {
+    const localCategories = rowsFromDatabase(localDb, 'categories').map(normalizeSyncCategory).filter(row => row.id);
+    const remoteCategories = rowsFromDatabase(remoteDb, 'categories').map(normalizeSyncCategory).filter(row => row.id);
+    const localCategoryMap = new Map(localCategories.map(row => [row.id, row]));
+    let cloudOnlyCategories = 0;
+    let conflictingCategories = 0;
+    for (const remoteCategory of remoteCategories) {
+      const localCategory = localCategoryMap.get(remoteCategory.id);
+      if (!localCategory) {
+        localDb.run(
+          'INSERT OR IGNORE INTO categories (id, name, icon, sort_order) VALUES (?, ?, ?, ?)',
+          [remoteCategory.id, remoteCategory.name, remoteCategory.icon, remoteCategory.sort_order],
+        );
+        cloudOnlyCategories += 1;
+      } else if (JSON.stringify(localCategory) !== JSON.stringify(remoteCategory)) {
+        // 分类没有更新时间字段；本地优先，避免静默覆盖用户正在使用的名称或图标。
+        conflictingCategories += 1;
+      }
+    }
+
+    const localTodos = rowsFromDatabase(localDb, 'todos').map(normalizeSyncTodo).filter(row => row.id);
+    const remoteTodos = rowsFromDatabase(remoteDb, 'todos').map(normalizeSyncTodo).filter(row => row.id);
+    const localTodoMap = new Map(localTodos.map(row => [row.id, row]));
+    let cloudOnlyTodos = 0;
+    let localOnlyTodos = 0;
+    let remoteWins = 0;
+    let localWins = 0;
+    let conflictingTodos = 0;
+    const remoteIds = new Set(remoteTodos.map(row => row.id));
+
+    for (const localTodo of localTodos) {
+      if (!remoteIds.has(localTodo.id)) localOnlyTodos += 1;
+    }
+    for (const remoteTodo of remoteTodos) {
+      const localTodo = localTodoMap.get(remoteTodo.id);
+      if (!localTodo) {
+        localDb.run(
+          `INSERT OR IGNORE INTO todos (${TODO_DB_COLUMNS.join(', ')}) VALUES (${TODO_DB_COLUMNS.map(() => '?').join(', ')})`,
+          syncTodoValues(remoteTodo),
+        );
+        cloudOnlyTodos += 1;
+        continue;
+      }
+      if (syncTodoSignature(localTodo) === syncTodoSignature(remoteTodo)) continue;
+
+      const localTime = syncTimestamp(localTodo.updated_at);
+      const remoteTime = syncTimestamp(remoteTodo.updated_at);
+      if (remoteTime !== null && (localTime === null || remoteTime > localTime)) {
+        const updateColumns = TODO_DB_COLUMNS.slice(1);
+        localDb.run(
+          `UPDATE todos SET ${updateColumns.map(column => `${column}=?`).join(', ')} WHERE id=?`,
+          [...updateColumns.map(column => remoteTodo[column]), remoteTodo.id],
+        );
+        remoteWins += 1;
+      } else if (localTime !== null && (remoteTime === null || localTime > remoteTime)) {
+        localWins += 1;
+      } else {
+        // 时间相同或都无法解析时不猜测，保留本地并让界面明确显示冲突数。
+        conflictingTodos += 1;
+        localWins += 1;
+      }
+    }
+
+    return {
+      content: Buffer.from(localDb.export()),
+      summary: {
+        localOnlyTodos,
+        cloudOnlyTodos,
+        remoteWins,
+        localWins,
+        conflictingTodos,
+        cloudOnlyCategories,
+        conflictingCategories,
+      },
+    };
+  } finally {
+    localDb.close();
+    remoteDb.close();
+  }
+}
+
+function noteFilesIn(directory) {
+  if (!fs.existsSync(directory)) return [];
+  return fs.readdirSync(directory).filter(name => name.endsWith('.md'));
+}
+
+function copySyncNote(source, target) {
+  fs.copyFileSync(source, target);
+  try { fs.chmodSync(target, 0o600); } catch (_) {}
+}
+
+function mergeSyncNotes(remoteDir, remoteDescriptors, mergedDir) {
+  fs.mkdirSync(mergedDir, { recursive: true, mode: 0o700 });
+  const localNames = new Set(noteFilesIn(NOTES_DIR));
+  const remoteNames = new Set(noteFilesIn(remoteDir));
+  const remoteMeta = new Map((remoteDescriptors || []).map(note => [note.name, note]));
+  let localOnlyNotes = 0;
+  let cloudOnlyNotes = 0;
+  let conflictingNotes = 0;
+
+  for (const name of localNames) {
+    const source = path.join(NOTES_DIR, name);
+    const target = path.join(mergedDir, name);
+    if (!remoteNames.has(name)) localOnlyNotes += 1;
+    copySyncNote(source, target);
+  }
+  for (const name of remoteNames) {
+    const source = path.join(remoteDir, name);
+    const target = path.join(mergedDir, name);
+    if (!localNames.has(name)) {
+      cloudOnlyNotes += 1;
+      copySyncNote(source, target);
+      continue;
+    }
+    const localSource = path.join(NOTES_DIR, name);
+    const localContent = fs.readFileSync(localSource);
+    const remoteContent = fs.readFileSync(source);
+    if (sha256(localContent) === sha256(remoteContent)) continue;
+    conflictingNotes += 1;
+    const localMtime = fs.statSync(localSource).mtimeMs;
+    const remoteMtime = Number(remoteMeta.get(name)?.mtimeMs) || 0;
+    if (remoteMtime > localMtime) copySyncNote(source, target);
+  }
+  return { localOnlyNotes, cloudOnlyNotes, conflictingNotes };
+}
+
+async function syncBackupToCurrentData() {
+  if (restoreInFlight || syncInFlight) throw new Error('已有数据同步任务正在执行，请稍候');
+  if (backupInFlight) throw new Error('备份正在进行，请稍候再同步');
+  syncInFlight = true;
+  const remoteStageDir = nextRestorePath('todo-sync-remote');
+  const mergedStageDir = nextRestorePath('todo-sync-merged');
+  const safetyDir = nextRestoreSafetyPath('sync');
+  let servicesStopped = false;
+  let databaseClosed = false;
+  try {
+    saveDB();
+    const localContent = fs.readFileSync(DB_FILE);
+    const remote = await restoreBackup(getBackupConfig(), { outputDir: remoteStageDir });
+    const remoteContent = fs.readFileSync(path.join(remoteStageDir, 'todo.db'));
+    const merged = await mergeSyncDatabase(localContent, remoteContent);
+    const mergedNotesDir = path.join(mergedStageDir, 'notes');
+    fs.mkdirSync(mergedStageDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(mergedStageDir, 'todo.db'), merged.content, { mode: 0o600 });
+    const noteSummary = mergeSyncNotes(path.join(remoteStageDir, 'notes'), remote.noteDescriptors, mergedNotesDir);
+
+    stopCron();
+    stopBackupTimer();
+    servicesStopped = true;
+    closeDB();
+    databaseClosed = true;
+    copyRestoreSafetyFiles(safetyDir);
+    replaceRestoredData(mergedStageDir);
+    await initDB();
+
+    const config = getFullConfig();
+    if (config.email.enabled && isEmailConfigured(config.email)) startCron();
+    startBackupTimer();
+    servicesStopped = false;
+
+    let cloudSyncPending = false;
+    let cloudSyncError = null;
+    let uploaded = null;
+    try {
+      uploaded = await uploadBackup(BACKUP_PATHS, getBackupConfig());
+    } catch (e) {
+      cloudSyncPending = true;
+      cloudSyncError = e.message;
+    }
+    return {
+      ...(uploaded || {
+        success: true,
+        createdAt: new Date().toISOString(),
+        uploadedObjects: 0,
+        reusedObjects: 0,
+        noteCount: noteFilesIn(NOTES_DIR).length,
+      }),
+      success: true,
+      active: true,
+      cloudSyncPending,
+      cloudSyncError,
+      safetyBackupDir: safetyDir,
+      sync: { ...merged.summary, ...noteSummary, snapshotPath: remote.snapshotPath },
+      message: cloudSyncPending
+        ? '本地合并完成，但云端上传失败；本地结果已保留，请稍后重试。'
+        : '本地与云端已完成合并同步，历史快照仍然保留。',
+    };
+  } catch (e) {
+    if (databaseClosed) {
+      try {
+        await rollbackRestoredData(safetyDir);
+      } catch (rollbackError) {
+        throw new Error(`${e.message}；自动回滚失败：${rollbackError.message}`);
+      }
+    }
+    throw e;
+  } finally {
+    try { fs.rmSync(remoteStageDir, { recursive: true, force: true }); } catch (_) {}
+    try { fs.rmSync(mergedStageDir, { recursive: true, force: true }); } catch (_) {}
+    if (servicesStopped) {
+      const config = getFullConfig();
+      if (config.email.enabled && isEmailConfigured(config.email)) startCron();
+      startBackupTimer();
+    }
+    syncInFlight = false;
   }
 }
 

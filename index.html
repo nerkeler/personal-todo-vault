@@ -1597,6 +1597,10 @@
       background: rgba(255,85,85,0.12);
       color: #ff5555;
     }
+    .settings-badge.theme-status-badge {
+      background: rgba(82,196,26,0.12);
+      color: #52c41a;
+    }
     .settings-meta,
     .settings-result {
       font-size: 0.75rem;
@@ -1608,6 +1612,42 @@
     .settings-footer-actions { justify-content: flex-end; margin-top: 16px; }
     .settings-save-result { text-align: right; margin-top: 8px; min-height: 18px; }
     .modal-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .backup-sync-modal { max-width: 460px; }
+    .backup-sync-lead {
+      margin: -4px 0 16px;
+      color: var(--text-2);
+      font-size: 0.86rem;
+      line-height: 1.65;
+    }
+    .backup-sync-rules {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 12px 14px 12px 30px;
+      border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+      border-radius: var(--radius-sm);
+      background: var(--primary-light);
+      color: var(--text-2);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+    .backup-sync-rules li::marker { color: var(--primary); }
+    .backup-sync-safety {
+      margin-top: 14px;
+      color: var(--text-3);
+      font-size: 0.74rem;
+      line-height: 1.55;
+    }
+    .backup-sync-summary {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-3);
+      background: var(--bg);
+      font-size: 0.74rem;
+      line-height: 1.5;
+    }
     @media (max-width: 720px) {
       .settings-grid { grid-template-columns: 1fr; }
       .settings-modal { max-width: 96vw; }
@@ -1825,30 +1865,78 @@
 
     /* ── Responsive ── */
     @media (max-width: 768px) {
-      .todo-item { position: relative; }
-      .todo-actions { position: absolute; top: 13px; right: 14px; width: auto; }
-      .todo-meta {
+      .todo-item {
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr);
+        column-gap: 10px;
+        row-gap: 6px;
+        padding: 10px 12px;
+        align-items: start;
+      }
+      .todo-item > .checkbox {
+        grid-column: 1;
+        grid-row: 2;
+      }
+      .todo-item > .todo-body {
+        display: contents;
+      }
+      .todo-body > .todo-text,
+      .todo-body > .todo-title-editor {
+        grid-column: 2;
+        grid-row: 2;
+        min-width: 0;
+      }
+      .todo-actions {
+        position: static;
+        grid-column: 1 / -1;
+        grid-row: 1;
+        width: 100%;
+        min-height: 32px;
+        padding-bottom: 4px;
+        box-sizing: border-box;
+        border-bottom: 1px solid var(--border);
+        justify-content: flex-start;
         align-items: center;
-        flex-direction: row;
-        flex-wrap: nowrap;
+        opacity: 1;
+        gap: 2px;
+      }
+      .todo-actions .todo-act-btn.del { order: 1; }
+      .todo-actions .todo-act-btn.edit-action { order: 2; }
+      .todo-actions .todo-act-btn.note-action { order: 3; }
+      .todo-actions .todo-act-btn.reminder-action { order: 4; }
+      .todo-act-btn {
+        width: 28px;
+        height: 28px;
+        font-size: 13px;
+      }
+      .todo-body > .todo-progress-row {
+        grid-column: 2;
+        grid-row: 3;
+        min-width: 0;
+      }
+      .todo-body > .todo-meta {
+        grid-column: 1 / -1;
+        grid-row: 4;
+      }
+      .todo-meta {
+        align-items: stretch;
+        flex-direction: column;
         gap: 8px;
         width: 100%;
         margin-right: 0;
-        overflow-x: auto;
-        scrollbar-width: none;
+        overflow: visible;
       }
-      .todo-meta::-webkit-scrollbar { display: none; }
       .todo-labels {
-        width: auto;
-        flex: 0 0 auto;
-        flex-wrap: nowrap;
-        gap: 4px;
+        width: 100%;
+        flex: none;
+        flex-wrap: wrap;
+        gap: 6px;
       }
       .todo-dates {
-        width: auto;
-        flex: 1 1 auto;
+        display: none;
+        width: 100%;
+        flex: none;
         margin-left: 0;
-        display: flex;
         flex-direction: row;
         align-items: center;
         justify-content: flex-end;
@@ -1879,7 +1967,17 @@
       .cat-picker-btn,
       .add-priority-btn { width: 100%; min-width: 0; }
       .add-btn { width: 100%; min-width: 0; padding-left: 14px; padding-right: 14px; }
-      .cat-picker-list { position: fixed; top: auto; bottom: 0; left: 0; right: 0; border-radius: 12px 12px 0 0; max-height: 50vh; z-index: 100; isolation: isolate; }
+      .cat-picker-list {
+        position: fixed;
+        top: auto;
+        right: auto;
+        bottom: auto;
+        left: auto;
+        width: auto;
+        max-width: calc(100vw - 16px);
+        max-height: calc(100vh - 24px);
+        border-radius: var(--radius-sm);
+      }
       .cat-name { max-width: none; }
       .cat-item .cat-count { margin-left: auto; }
       .note-modal {
@@ -2060,7 +2158,7 @@
             <div class="settings-section-title">🎨 外观</div>
             <div class="settings-section-desc">主题偏好只保存在当前浏览器，选择后立即生效。</div>
           </div>
-          <span class="settings-badge" id="themeStatusBadge">手动</span>
+          <span class="settings-badge theme-status-badge" id="themeStatusBadge">手动</span>
         </div>
         <span class="settings-disclosure-chevron" aria-hidden="true"></span>
       </summary>
@@ -2202,9 +2300,11 @@
         </label>
         </div>
         <div id="backupMeta" class="settings-meta">读取中…</div>
+        <div class="settings-meta">立即备份只上传本地当前数据；与云端同步会合并双方新增内容，并在切换前保存本地安全副本。</div>
         <div class="settings-actions-inline">
           <button class="modal-btn primary" id="testWebdavBtn" onclick="testWebdavSettings()">测试坚果云</button>
           <button class="modal-btn" id="backupNowBtn" onclick="runCloudBackup()">立即备份</button>
+          <button class="modal-btn" id="syncBackupBtn" onclick="openBackupSyncModal()">与云端同步</button>
           <span class="settings-result" id="backupResult"></span>
         </div>
       </div>
@@ -2215,6 +2315,29 @@
       <button class="modal-btn primary" id="saveSettingsBtn" onclick="saveSettings()">保存配置</button>
     </div>
     <div class="settings-result settings-save-result" id="settingsSaveResult"></div>
+  </div>
+</div>
+
+<!-- 云端同步确认弹窗 -->
+<div class="modal-overlay" id="backupSyncModal">
+  <div class="modal backup-sync-modal" role="dialog" aria-modal="true" aria-labelledby="backupSyncTitle">
+    <div class="modal-title">
+      <span id="backupSyncTitle">☁️ 与云端同步</span>
+      <button class="modal-close" onclick="closeBackupSyncModal()" aria-label="关闭同步确认">✕</button>
+    </div>
+    <p class="backup-sync-lead">这一步是合并同步，不是用云端快照覆盖本地数据。</p>
+    <ul class="backup-sync-rules">
+      <li>本地新增和云端新增都会保留。</li>
+      <li>同一待办有差异时，优先采用更新时间较新的版本。</li>
+      <li>无法判断先后时保留本地版本，并在同步结果中提示。</li>
+      <li>同名笔记发生差异时也会保留较新的内容。</li>
+    </ul>
+    <div class="backup-sync-summary" id="backupSyncSummary">同步前会完整校验云端快照；当前本地数据会先保存到安全备份目录。</div>
+    <div class="backup-sync-safety">云端历史快照不会被删除。若上传失败，本地合并结果仍会保留，可以稍后再次同步。</div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeBackupSyncModal()">取消</button>
+      <button class="modal-btn primary" id="confirmBackupSyncBtn" onclick="confirmBackupSync()">开始同步</button>
+    </div>
   </div>
 </div>
 
@@ -2487,8 +2610,7 @@
           !e.target.closest('.cat-picker-btn')) {
         closeMoveDropdown();
         closePriorityDropdown();
-        document.querySelectorAll('.cat-picker-list').forEach(d => d.classList.remove('open'));
-        document.querySelectorAll('.cat-picker-btn').forEach(b => b.classList.remove('open'));
+        closeCatPicker();
       }
     });
   });
@@ -3177,7 +3299,9 @@
 
     const meta = document.getElementById('backupMeta');
     const btn = document.getElementById('backupNowBtn');
+    const syncBtn = document.getElementById('syncBackupBtn');
     if (btn) btn.disabled = !configured;
+    if (syncBtn) syncBtn.disabled = !configured;
     if (meta) {
       meta.textContent = `目录：${status.backupDir || 'todo-app-backups'} · 增量上传 / 完整快照 · ${status.autoEnabled ? `自动备份：每 ${status.intervalHours || 24} 小时` : '自动备份：未启用'}`;
     }
@@ -3242,6 +3366,47 @@
     } finally {
       setButtonBusy('backupNowBtn', false);
       renderBackupStatus();
+    }
+  }
+
+  function openBackupSyncModal() {
+    const status = backupStatus || {};
+    if (!status.configured) { renderBackupStatus(); return; }
+    const summary = document.getElementById('backupSyncSummary');
+    if (summary) summary.textContent = '同步前会完整校验云端快照；当前本地数据会先保存到安全备份目录。';
+    showModal('backupSyncModal', document.getElementById('syncBackupBtn'));
+  }
+
+  function closeBackupSyncModal() {
+    hideModal('backupSyncModal');
+  }
+
+  async function confirmBackupSync() {
+    const status = backupStatus || {};
+    if (!status.configured) { closeBackupSyncModal(); renderBackupStatus(); return; }
+    setButtonBusy('confirmBackupSyncBtn', true, '同步中…');
+    setButtonBusy('syncBackupBtn', true, '同步中…');
+    setResult('backupResult', '正在校验并合并本地与云端数据，请稍候…');
+    closeBackupSyncModal();
+    try {
+      const res = await fetch(API + '/backup/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '云端同步失败');
+      await loadData();
+      backupStatus = { ...backupStatus, configured: true, lastBackup: data };
+      settings = normalizeSettings({ ...settings, backup: backupStatus });
+      renderBackupStatus();
+      const sync = data.sync || {};
+      const pending = data.cloudSyncPending ? '；云端上传失败，本地结果已保留，请稍后重试' : '';
+      setResult('backupResult', `✅ ${data.message || '合并同步完成'} 本地新增 ${sync.localOnlyTodos ?? 0} 项，云端新增 ${sync.cloudOnlyTodos ?? 0} 项，冲突 ${sync.conflictingTodos ?? 0} 项${pending}`, data.cloudSyncPending ? 'error' : 'ok');
+    } catch (e) {
+      setResult('backupResult', `❌ ${e.message}`, 'error');
+    } finally {
+      setButtonBusy('confirmBackupSyncBtn', false);
+      setButtonBusy('syncBackupBtn', false);
     }
   }
 
@@ -3642,10 +3807,11 @@
     if (!list || !btn) return;
     const isOpen = list.classList.contains('open');
     if (isOpen) {
-      list.classList.remove('open');
-      btn.classList.remove('open');
+      closeCatPicker();
       return;
     }
+    closePriorityDropdown();
+    closeMoveDropdown();
     // Build list
     list.innerHTML = categories.sort((a, b) => a.sort_order - b.sort_order).map(c => `
       <div class="cat-picker-item${c.id === selectedAddCatId ? ' selected' : ''}"
@@ -3661,31 +3827,50 @@
     list.style.position = 'fixed';
     const vw = window.innerWidth;
     const vh = window.innerHeight;
+    const rect = btn.getBoundingClientRect();
     if (vw <= 768) {
-      // Mobile: pin to bottom of screen
-      list.style.left = '0';
-      list.style.right = '0';
-      list.style.top = 'auto';
-      list.style.bottom = '0';
+      // Mobile: anchor below the button and flip above it when needed.
+      const edge = 8;
+      const width = Math.min(Math.max(rect.width, 160), vw - edge * 2);
+      const maxHeight = Math.max(160, Math.min(260, vh - edge * 2));
+      const left = Math.min(Math.max(edge, rect.left), vw - width - edge);
+      list.style.left = left + 'px';
+      list.style.right = 'auto';
+      list.style.width = width + 'px';
+      list.style.maxHeight = maxHeight + 'px';
+      list.style.top = (rect.bottom + 4) + 'px';
+      list.style.bottom = 'auto';
     } else {
       // Desktop: appear below button
-      const rect = btn.getBoundingClientRect();
       list.style.left = rect.left + 'px';
       list.style.right = 'auto';
       list.style.top = (rect.bottom + 4) + 'px';
       list.style.bottom = 'auto';
+      list.style.width = 'auto';
+      list.style.maxHeight = '260px';
     }
     btn.classList.add('open');
     list.classList.add('open');
+    if (vw <= 768) {
+      const menuHeight = Math.min(list.scrollHeight, parseFloat(list.style.maxHeight));
+      const belowTop = rect.bottom + 4;
+      const aboveTop = rect.top - menuHeight - 4;
+      const top = belowTop + menuHeight <= vh - 8
+        ? belowTop
+        : Math.max(8, aboveTop);
+      list.style.top = top + 'px';
+    }
+  }
+
+  function closeCatPicker() {
+    document.getElementById('catPickerList')?.classList.remove('open');
+    document.getElementById('catPickerBtn')?.classList.remove('open');
   }
 
   function selectAddCat(catId) {
     selectedAddCatId = catId;
     localStorage.setItem('lastUsedCatId', catId);
-    const list = document.getElementById('catPickerList');
-    const btn = document.getElementById('catPickerBtn');
-    if (list) list.classList.remove('open');
-    if (btn) btn.classList.remove('open');
+    closeCatPicker();
     renderCatPickerLabel();
   }
 
@@ -3854,8 +4039,8 @@
         </div>
         <div class="todo-actions">
           ${!t.completed ? `<button class="todo-act-btn reminder-action${t.reminderEnabled ? ' active' : ''}" onclick="openReminderModal('${t.id}', this)" title="${t.reminderEnabled ? '提醒已开启' : '提醒已关闭'}">${t.reminderEnabled ? '🔔' : '🔕'}</button>` : ''}
-          <button class="todo-act-btn${t.noteFile ? ' has-note' : ''}" onclick="openNoteModal('${t.id}', this)" title="${t.completed ? '查看笔记（只读）' : '笔记'}">📄</button>
-          ${!t.completed ? `<button class="todo-act-btn" onclick="startEditTodo('${t.id}')" title="编辑">✎</button>` : ''}
+          <button class="todo-act-btn note-action${t.noteFile ? ' has-note' : ''}" onclick="openNoteModal('${t.id}', this)" title="${t.completed ? '查看笔记（只读）' : '笔记'}">📄</button>
+          ${!t.completed ? `<button class="todo-act-btn edit-action" onclick="startEditTodo('${t.id}')" title="编辑">✎</button>` : ''}
           <button class="todo-act-btn del" onclick="deleteTodo('${t.id}')" title="删除">✕</button>
         </div>
       </div>
@@ -3890,6 +4075,7 @@
 
     closeMoveDropdown();
     closePriorityDropdown();
+    closeCatPicker();
     openPriorityTodoId = ADD_PRIORITY_TODO_ID;
     portal.innerHTML = Object.entries(PRIORITY_META).map(([value, meta]) => `
       <button type="button" class="priority-option priority-${meta.className}${Number(value) === selectedAddPriority ? ' active' : ''}"
@@ -3936,6 +4122,7 @@
     }
 
     closeMoveDropdown();
+    closeCatPicker();
     document.getElementById('addPriorityBtn')?.classList.remove('open');
     openPriorityTodoId = todoId;
     const currentPriority = todoPriorityValue(todo);
@@ -4005,6 +4192,7 @@
     const portal = document.getElementById('move-dropdown-portal');
     if (!portal) return;
     closePriorityDropdown();
+    closeCatPicker();
     const moveTodoItem = todos.find(x => x.id === todoId);
     if (!moveTodoItem || moveTodoItem.completed) {
       closeMoveDropdown();
