@@ -110,6 +110,15 @@ function isValidTime(value) {
   return typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
+function isValidDateOnly(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(0);
+  date.setHours(0, 0, 0, 0);
+  date.setFullYear(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+
 const REMINDER_MODES = new Set(['once', 'weekly', 'count']);
 const PRIORITY_LEVELS = new Set([0, 1, 2]);
 const WEEKDAY_NAMES = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -793,16 +802,24 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'POST') {
-      withBody(async ({ title, categoryId, priority }) => {
+      withBody(async ({ title, categoryId, priority, dueDate, dueTime }) => {
         if (!isNonEmptyString(title, 200)) { jsonResR({ error: '标题必须是 1-200 个字符的非空字符串' }, 400); return; }
         if (priority !== undefined && (!Number.isInteger(priority) || !PRIORITY_LEVELS.has(priority))) {
           jsonResR({ error: 'priority 必须是 0、1 或 2' }, 400); return;
+        }
+        const effectiveDueDate = dueDate === undefined ? localDateKey(new Date()) : dueDate;
+        if (!isValidDateOnly(effectiveDueDate)) {
+          jsonResR({ error: 'dueDate 必须是 YYYY-MM-DD 格式的有效日期' }, 400); return;
+        }
+        const effectiveDueTime = dueTime === undefined ? '' : dueTime;
+        if (effectiveDueTime !== '' && !isValidTime(effectiveDueTime)) {
+          jsonResR({ error: 'dueTime 必须是 HH:MM 格式或留空' }, 400); return;
         }
         const selectedCategoryId = categoryId || defaultCategoryId();
         if (!selectedCategoryId || !hasCategory(selectedCategoryId)) {
           jsonResR({ error: 'Category not found' }, 400); return;
         }
-        try { jsonResR(createTodo(title.trim(), selectedCategoryId, priority ?? 0)); }
+        try { jsonResR(createTodo(title.trim(), selectedCategoryId, priority ?? 0, effectiveDueDate, effectiveDueTime)); }
         catch (e) { jsonResR({ error: e.message }, 500); }
       });
       return;
@@ -847,6 +864,12 @@ const server = http.createServer(async (req, res) => {
         if (updates.priority !== undefined && (!Number.isInteger(updates.priority) || !PRIORITY_LEVELS.has(updates.priority))) {
           jsonResR({ error: 'priority 必须是 0、1 或 2' }, 400); return;
         }
+        if (updates.dueDate !== undefined && updates.dueDate !== '' && !isValidDateOnly(updates.dueDate)) {
+          jsonResR({ error: 'dueDate 必须是 YYYY-MM-DD 格式的有效日期或留空' }, 400); return;
+        }
+        if (updates.dueTime !== undefined && updates.dueTime !== '' && !isValidTime(updates.dueTime)) {
+          jsonResR({ error: 'dueTime 必须是 HH:MM 格式或留空' }, 400); return;
+        }
         if (updates.reminderEnabled !== undefined && typeof updates.reminderEnabled !== 'boolean') {
           jsonResR({ error: 'reminderEnabled 必须是布尔值' }, 400); return;
         }
@@ -875,6 +898,8 @@ const server = http.createServer(async (req, res) => {
           if (updates.categoryId !== undefined) kw.categoryId = updates.categoryId;
           if (updates.progress !== undefined) kw.progress = updates.progress;
           if (updates.priority !== undefined) kw.priority = updates.priority;
+          if (updates.dueDate !== undefined) kw.dueDate = updates.dueDate;
+          if (updates.dueTime !== undefined) kw.dueTime = updates.dueTime;
           if (updates.reminderEnabled !== undefined) kw.reminderEnabled = updates.reminderEnabled;
           if (updates.reminderTime !== undefined) kw.reminderTime = updates.reminderTime;
           if (updates.reminderMode !== undefined) kw.reminderMode = updates.reminderMode;
@@ -1229,7 +1254,7 @@ async function restoreBackupToCurrentData(snapshot = 'latest') {
 
 const TODO_DB_COLUMNS = [
   'id', 'title', 'completed', 'category_id', 'progress', 'priority',
-  'created_at', 'updated_at', 'reminder_enabled', 'reminder_time',
+  'due_date', 'due_time', 'created_at', 'updated_at', 'reminder_enabled', 'reminder_time',
   'reminder_mode', 'reminder_weekdays', 'reminder_repeat_count',
   'reminder_sent_count', 'reminder_last_sent_at', 'creator_email', 'note_file',
 ];
@@ -1262,6 +1287,8 @@ function normalizeSyncTodo(row) {
     category_id: String(row.category_id || 'cat_default'),
     progress,
     priority,
+    due_date: String(row.due_date || ''),
+    due_time: String(row.due_time || ''),
     created_at: createdAt,
     updated_at: String(row.updated_at || createdAt),
     reminder_enabled: row.reminder_enabled ? 1 : 0,

@@ -52,6 +52,8 @@ async function initDB() {
     category_id TEXT,
     progress INTEGER DEFAULT 0,
     priority INTEGER DEFAULT 0,
+    due_date TEXT DEFAULT '',
+    due_time TEXT DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     reminder_enabled INTEGER DEFAULT 0,
@@ -80,6 +82,8 @@ async function initDB() {
   const migrations = [
     ['updated_at', "ALTER TABLE todos ADD COLUMN updated_at TEXT DEFAULT ''"],
     ['priority', "ALTER TABLE todos ADD COLUMN priority INTEGER DEFAULT 0"],
+    ['due_date', "ALTER TABLE todos ADD COLUMN due_date TEXT DEFAULT ''"],
+    ['due_time', "ALTER TABLE todos ADD COLUMN due_time TEXT DEFAULT ''"],
     ['note_file', "ALTER TABLE todos ADD COLUMN note_file TEXT DEFAULT ''"],
     ['reminder_mode', "ALTER TABLE todos ADD COLUMN reminder_mode TEXT DEFAULT 'once'"],
     ['reminder_weekdays', "ALTER TABLE todos ADD COLUMN reminder_weekdays TEXT DEFAULT '[]'"],
@@ -90,6 +94,9 @@ async function initDB() {
   for (const [name, sql] of migrations) {
     if (!colNames.includes(name)) db.run(sql);
   }
+
+  // 迁移完成后再创建索引，兼容没有 due_date 列的旧数据库。
+  db.run('CREATE INDEX IF NOT EXISTS idx_todos_due_date ON todos(due_date)');
 
   // 旧数据没有更新时间时，用创建时间作为初始值。
   db.run("UPDATE todos SET updated_at=created_at WHERE updated_at IS NULL OR updated_at=''");
@@ -251,6 +258,8 @@ function getTodos(categoryId) {
     priority: Number.isInteger(Number(r.priority)) && Number(r.priority) >= 0 && Number(r.priority) <= 2
       ? Number(r.priority)
       : 0,
+    dueDate: r.due_date || '',
+    dueTime: r.due_time || '',
     createdAt: r.created_at || null,
     updatedAt: r.updated_at || r.created_at || null,
     completed: !!r.completed,
@@ -266,14 +275,14 @@ function getTodos(categoryId) {
   }));
 }
 
-function createTodo(title, categoryId = 'cat_default', priority = 0) {
+function createTodo(title, categoryId = 'cat_default', priority = 0, dueDate = '', dueTime = '') {
   const id = require('crypto').randomBytes(8).toString('hex') + require('crypto').randomBytes(4).toString('hex');
   const now = new Date().toISOString();
   const safePriority = Number.isInteger(Number(priority)) && Number(priority) >= 0 && Number(priority) <= 2
     ? Number(priority)
     : 0;
-  db.run(`INSERT INTO todos (id, title, completed, category_id, progress, priority, created_at, updated_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
-    VALUES (?, ?, 0, ?, 0, ?, ?, ?, 0, '', 'once', '[]', 1, 0, '', '', '')`, [id, title, categoryId, safePriority, now, now]);
+  db.run(`INSERT INTO todos (id, title, completed, category_id, progress, priority, due_date, due_time, created_at, updated_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
+    VALUES (?, ?, 0, ?, 0, ?, ?, ?, ?, ?, 0, '', 'once', '[]', 1, 0, '', '', '')`, [id, title, categoryId, safePriority, dueDate || '', dueTime || '', now, now]);
   saveDB();
   return getTodos().find(t => t.id === id);
 }
@@ -288,6 +297,8 @@ function updateTodo(id, kwargs, options = {}) {
     categoryId: 'category_id',
     progress: 'progress',
     priority: 'priority',
+    dueDate: 'due_date',
+    dueTime: 'due_time',
     reminderEnabled: 'reminder_enabled',
     reminderTime: 'reminder_time',
     reminderMode: 'reminder_mode',
@@ -405,6 +416,8 @@ function migrateFromJSON(jsonFile, persist = true) {
       const priority = Number.isInteger(Number(todo.priority)) && Number(todo.priority) >= 0 && Number(todo.priority) <= 2
         ? Number(todo.priority)
         : 0;
+      const dueDate = todo.dueDate ?? todo.due_date ?? '';
+      const dueTime = todo.dueTime ?? todo.due_time ?? '';
       const reminderTime = todo.reminderTime ?? todo.reminder_time ?? '';
       const reminderMode = ['once', 'weekly', 'count'].includes(todo.reminderMode) ? todo.reminderMode : 'once';
       const reminderWeekdays = JSON.stringify(parseReminderWeekdays(todo.reminderWeekdays ?? todo.reminder_weekdays));
@@ -416,11 +429,11 @@ function migrateFromJSON(jsonFile, persist = true) {
       const createdAt = todo.createdAt ?? todo.created_at ?? '';
       const updatedAt = todo.updatedAt ?? todo.updated_at ?? createdAt;
       db.run(`INSERT OR IGNORE INTO todos
-        (id, title, completed, category_id, progress, priority, created_at, updated_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, title, completed, category_id, progress, priority, due_date, due_time, created_at, updated_at, reminder_enabled, reminder_time, reminder_mode, reminder_weekdays, reminder_repeat_count, reminder_sent_count, reminder_last_sent_at, creator_email, note_file)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [todo.id, todo.title, todo.completed ? 1 : 0,
          todo.categoryId || 'cat_default', todo.progress || 0, priority,
-         createdAt, updatedAt, reminderEnabled ? 1 : 0,
+         dueDate, dueTime, createdAt, updatedAt, reminderEnabled ? 1 : 0,
          reminderTime, reminderMode, reminderWeekdays, reminderRepeatCount, reminderSentCount,
          reminderLastSentAt, creatorEmail, noteFile]);
     } catch (e) { /* ignore dup */ }

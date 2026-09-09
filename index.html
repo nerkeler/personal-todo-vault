@@ -85,7 +85,7 @@
     /* ── Sidebar ── */
     .sidebar {
       width: var(--sidebar-w);
-      background: var(--surface);
+      background: var(--bg);
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
@@ -140,7 +140,12 @@
     .cat-list {
       flex: 1;
       overflow-y: auto;
+      margin: 12px 10px 10px;
       padding: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
     }
 
     .cat-item {
@@ -245,8 +250,7 @@
 
     /* Sidebar footer */
     .sidebar-footer {
-      padding: 10px;
-      border-top: 1px solid var(--border);
+      padding: 0 10px 10px;
     }
 
     /* Sidebar resize handle */
@@ -285,6 +289,9 @@
       margin-left: max(var(--sidebar-w), calc(var(--sidebar-w) + (100vw - var(--sidebar-w) - var(--main-max)) / 2));
       padding: 28px 32px 30px;
       max-width: var(--main-max);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
       container: main-content / inline-size;
     }
 
@@ -345,6 +352,71 @@
     .current-cat-title .ui-icon { width: 1.15em; height: 1.15em; color: var(--primary); }
 
     .header-right { display: flex; align-items: center; gap: 10px; }
+
+    .view-switcher {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .view-switch-btn {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      background: var(--surface);
+      color: var(--text-2);
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .view-switch-btn.view-list { --view-color: #3478e5; }
+    .view-switch-btn.view-day { --view-color: #00a878; }
+    .view-switch-btn.view-month { --view-color: #7957d5; }
+    .view-switch-btn.view-list,
+    .view-switch-btn.view-day,
+    .view-switch-btn.view-month { color: var(--view-color); }
+    .view-switch-btn:hover,
+    .view-switch-btn:focus-visible {
+      border-color: var(--view-color, var(--primary));
+      color: var(--view-color, var(--primary));
+      outline: none;
+    }
+    .view-switch-btn.view-active {
+      border-color: var(--view-color, var(--primary));
+      background: var(--surface);
+      color: var(--view-color, var(--primary));
+    }
+    .view-switch-btn .view-icon {
+      width: 21px;
+      height: 21px;
+      fill: none;
+      stroke: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      overflow: visible;
+    }
+    .view-switch-btn .view-icon .skeuo-shadow {
+      fill: currentColor;
+      opacity: .24;
+    }
+    .view-switch-btn .view-icon .skeuo-face {
+      fill: currentColor;
+    }
+    .view-switch-btn .view-icon .skeuo-dark {
+      fill: currentColor;
+      opacity: .72;
+    }
+    .view-switch-btn .view-icon .skeuo-shine {
+      fill: var(--surface);
+      opacity: .7;
+    }
+    .view-switch-btn .view-icon .skeuo-detail {
+      fill: var(--surface);
+      opacity: .96;
+    }
 
     .header-help {
       width: 36px;
@@ -416,12 +488,17 @@
       overflow: visible;
     }
 
-    .add-input {
+    .add-input-wrap {
+      position: relative;
       flex: 1 1 0;
-      width: auto;
       min-width: 220px;
+    }
+
+    .add-input {
+      width: 100%;
+      min-width: 0;
       height: 52px;
-      padding: 0 14px;
+      padding: 0 50px 0 14px;
       border: 1.5px solid var(--border);
       border-radius: var(--radius-sm);
       font-size: 1rem;
@@ -437,6 +514,260 @@
       box-shadow: 0 0 0 3px var(--primary-light);
     }
     .add-input.shake { animation: shake 0.35s ease; }
+    .add-due-date-btn {
+      position: absolute;
+      top: 50%;
+      right: 8px;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      transform: translateY(-50%);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-3);
+      cursor: pointer;
+      transition: background var(--transition), color var(--transition);
+    }
+    .add-due-date-btn:hover,
+    .add-due-date-btn:focus-visible,
+    .add-due-date-btn.has-date { color: var(--primary); }
+    .add-due-date-btn:hover,
+    .add-due-date-btn:focus-visible { background: var(--primary-light); outline: none; }
+    .add-due-date-btn.open {
+      background: var(--primary-light);
+      box-shadow: 0 0 0 3px var(--primary-light);
+    }
+    .add-due-date-btn .ui-icon { width: 18px; height: 18px; }
+
+    .add-due-date-picker {
+      position: fixed;
+      z-index: 220;
+      display: none;
+      width: min(300px, calc(100vw - 16px));
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      box-shadow: var(--shadow-lg);
+      overflow: visible;
+    }
+    .add-due-date-picker.show { display: block; }
+    .add-due-date-picker[hidden] { display: none !important; }
+    .add-due-date-picker-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+      color: var(--text);
+      font-size: 0.82rem;
+    }
+    .due-picker-nav-btn {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--bg);
+      color: var(--text-2);
+      font: inherit;
+      cursor: pointer;
+    }
+    .due-picker-nav-btn:hover,
+    .due-picker-nav-btn:focus-visible {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      color: var(--primary);
+      outline: none;
+    }
+    .due-picker-weekdays,
+    .due-picker-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 4px;
+    }
+    .due-picker-weekdays {
+      margin-bottom: 4px;
+      color: var(--text-3);
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-align: center;
+    }
+    .due-picker-weekdays span:first-child,
+    .due-picker-weekdays span:last-child { color: var(--primary); }
+    .due-picker-grid button {
+      min-height: 32px;
+      padding: 0;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.76rem;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+    }
+    .due-picker-grid button:hover,
+    .due-picker-grid button:focus-visible {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      color: var(--primary);
+      outline: none;
+    }
+    .due-picker-grid button.is-outside { opacity: 0.35; }
+    .due-picker-grid button.is-today {
+      border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+      font-weight: 700;
+    }
+    .due-picker-grid button.is-selected {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #fff;
+    }
+    .due-picker-time {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .due-picker-time-label {
+      margin-right: auto;
+      color: var(--text-3);
+      font-size: 0.74rem;
+    }
+    .due-picker-time-select {
+      width: 52px;
+      height: 30px;
+      padding: 0 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.74rem;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+    }
+    .due-picker-time-select:focus-visible {
+      border-color: var(--primary);
+      outline: 2px solid var(--primary-light);
+    }
+    .due-picker-time-select.has-value {
+      border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+      background: var(--primary-light);
+      color: var(--primary);
+      font-weight: 700;
+    }
+    .due-picker-time-menu {
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 8px);
+      z-index: 3;
+      width: min(264px, calc(100vw - 40px));
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface);
+      box-shadow: var(--shadow-lg);
+    }
+    .due-picker-time-menu[hidden] { display: none !important; }
+    .due-picker-time-menu-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      color: var(--text-3);
+      font-size: 0.7rem;
+    }
+    .due-picker-time-menu-header strong {
+      color: var(--text-2);
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .due-picker-time-options {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 4px;
+    }
+    .due-picker-time-menu[data-kind="minute"] .due-picker-time-options {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+    .due-picker-time-option {
+      min-width: 0;
+      min-height: 28px;
+      padding: 0 2px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.72rem;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+    }
+    .due-picker-time-option:hover,
+    .due-picker-time-option:focus-visible {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      color: var(--primary);
+      outline: none;
+    }
+    .due-picker-time-option.is-selected {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #fff;
+      font-weight: 700;
+    }
+    .due-picker-clear-time,
+    .due-picker-today,
+    .due-picker-done {
+      height: 30px;
+      padding: 0 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    .due-picker-clear-time:hover,
+    .due-picker-clear-time:focus-visible,
+    .due-picker-today:hover,
+    .due-picker-today:focus-visible,
+    .due-picker-done:hover,
+    .due-picker-done:focus-visible {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      color: var(--primary);
+      outline: none;
+    }
+    .due-picker-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .due-picker-done {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #fff;
+    }
+    .due-picker-done:hover,
+    .due-picker-done:focus-visible {
+      background: color-mix(in srgb, var(--primary) 86%, #000);
+      color: #fff;
+    }
     @keyframes shake {
       0%, 100% { transform: translateX(0); }
       25% { transform: translateX(-6px); }
@@ -601,6 +932,10 @@
         display: grid;
       }
       .add-input {
+        width: 100%;
+        min-width: 0;
+      }
+      .add-input-wrap {
         grid-column: 1 / -1;
         width: 100%;
         min-width: 0;
@@ -1111,10 +1446,241 @@
       width: 0%;
     }
 
+    /* Calendar views */
+    .calendar-view[hidden] { display: none; }
+    .calendar-view {
+      margin-top: 24px;
+      padding-bottom: 8px;
+    }
+    .calendar-view-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    .calendar-view-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .calendar-view-subtitle {
+      margin-top: 4px;
+      color: var(--text-3);
+      font-size: 0.76rem;
+    }
+    .calendar-month-title {
+      display: inline-block;
+      margin-left: 8px;
+      color: var(--primary);
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .calendar-view-summary {
+      flex-shrink: 0;
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .calendar-view-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .calendar-nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .calendar-nav-btn {
+      min-width: 32px;
+      height: 30px;
+      padding: 0 9px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--bg);
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: background var(--transition), border-color var(--transition), color var(--transition);
+    }
+    .calendar-nav-btn:hover,
+    .calendar-nav-btn:focus-visible {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      color: var(--primary);
+      outline: none;
+    }
+    .calendar-day-panel,
+    .calendar-month-panel,
+    .calendar-task-group {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .calendar-day-panel {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
+      gap: 20px;
+      align-items: center;
+      padding: 22px;
+    }
+    .calendar-day-number {
+      color: var(--primary);
+      font-size: 3.2rem;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.06em;
+      font-variant-numeric: tabular-nums;
+    }
+    .calendar-day-copy {
+      min-width: 0;
+      padding-left: 20px;
+      border-left: 1px solid var(--border);
+    }
+    .calendar-day-date {
+      color: var(--text);
+      font-size: 1rem;
+      font-weight: 700;
+    }
+    .calendar-day-description {
+      margin-top: 6px;
+      color: var(--text-3);
+      font-size: 0.78rem;
+      line-height: 1.55;
+    }
+    .calendar-month-panel { padding: 18px; }
+    .calendar-weekdays,
+    .calendar-month-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .calendar-weekdays {
+      margin-bottom: 6px;
+      color: var(--text-3);
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-align: center;
+      border-radius: 10px;
+      background:
+        linear-gradient(to right,
+          color-mix(in srgb, var(--primary-light) 72%, transparent) 0 14.2857%,
+          transparent 14.2857% 85.7143%,
+          color-mix(in srgb, var(--primary-light) 72%, transparent) 85.7143% 100%);
+    }
+    .calendar-weekday { padding: 4px 0; }
+    .calendar-weekday.is-weekend {
+      color: var(--primary);
+      background: color-mix(in srgb, var(--primary-light) 72%, var(--surface));
+      border-radius: 7px;
+    }
+    .calendar-month-grid {
+      position: relative;
+      border-radius: 10px;
+      background:
+        linear-gradient(to right,
+          color-mix(in srgb, var(--primary-light) 72%, transparent) 0 14.2857%,
+          transparent 14.2857% 85.7143%,
+          color-mix(in srgb, var(--primary-light) 72%, transparent) 85.7143% 100%);
+    }
+    .calendar-day-cell {
+      width: 100%;
+      min-height: 54px;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.78rem;
+      font-variant-numeric: tabular-nums;
+      text-align: left;
+      cursor: pointer;
+      transition: background var(--transition), border-color var(--transition), color var(--transition), transform var(--transition);
+    }
+    .calendar-day-cell:hover,
+    .calendar-day-cell:focus-visible {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      color: var(--primary);
+      outline: none;
+      transform: translateY(-1px);
+    }
+    .calendar-day-cell.is-weekend {
+      border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+      background: transparent;
+    }
+    .calendar-day-cell.is-outside { opacity: 0.38; }
+    .calendar-day-cell.is-today {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      color: var(--primary);
+      font-weight: 700;
+    }
+    .calendar-day-cell.is-selected { box-shadow: inset 0 0 0 1px var(--primary); }
+    .calendar-day-cell-count {
+      display: block;
+      margin-top: 7px;
+      color: var(--accent);
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .calendar-task-group {
+      margin-top: 12px;
+      overflow: hidden;
+    }
+    .calendar-task-group-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .calendar-task-group-title {
+      color: var(--text);
+      font-size: 0.84rem;
+      font-weight: 700;
+    }
+    .calendar-task-group-count {
+      color: var(--text-3);
+      font-size: 0.72rem;
+    }
+    .calendar-task-card-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      background: var(--surface);
+    }
+    .calendar-task-card-list .todo-item { width: 100%; }
+    .calendar-view-note {
+      margin-top: 10px;
+      color: var(--text-3);
+      font-size: 0.72rem;
+      line-height: 1.5;
+    }
+    .calendar-empty {
+      padding: 24px 18px;
+      color: var(--text-3);
+      font-size: 0.78rem;
+      text-align: center;
+    }
+
     /* Footer */
     .footer {
       text-align: center;
-      margin-top: 12px;
+      margin-top: auto;
+      padding-top: 24px;
       font-size: 0.75rem;
       color: var(--text-3);
     }
@@ -1992,6 +2558,9 @@
       .toast { bottom: 16px; }
       .menu-btn { display: flex; align-items: center; justify-content: center; }
       .current-cat-title { font-size: 1.25rem; }
+      .header-right { gap: 6px; }
+      .view-switcher { gap: 4px; }
+      .view-switch-btn { width: 32px; height: 32px; }
       .add-row {
         display: grid;
         grid-template-columns: minmax(0, 3fr) minmax(0, 3fr) minmax(0, 2fr);
@@ -1999,7 +2568,7 @@
         align-items: center;
       }
       .add-input { min-width: 0; }
-      .add-input { grid-column: 1 / -1; width: 100%; }
+      .add-input-wrap { grid-column: 1 / -1; width: 100%; min-width: 0; }
       .cat-picker-btn,
       .add-priority-btn { width: 100%; min-width: 0; }
       .add-btn { width: 100%; min-width: 0; padding-left: 14px; padding-right: 14px; }
@@ -2027,6 +2596,25 @@
       .note-editor { width: 100%; min-height: 0; padding: 32px 22px; }
       .completed-pagination { width: 100%; }
       .completed-pagination-controls { width: fit-content; }
+      .calendar-view { margin-top: 20px; }
+      .calendar-view-header { align-items: flex-start; flex-wrap: wrap; }
+      .calendar-view-actions { width: 100%; justify-content: space-between; }
+      .calendar-day-panel { grid-template-columns: 72px minmax(0, 1fr); gap: 14px; padding: 18px; }
+      .calendar-day-copy { padding-left: 14px; }
+      .calendar-day-number { font-size: 2.7rem; }
+      .calendar-month-panel { padding: 12px; }
+      .calendar-weekdays, .calendar-month-grid { gap: 4px; }
+      .calendar-day-cell { min-height: 44px; padding: 6px; }
+      .calendar-task-card-list { padding: 10px; }
+    }
+
+    @media (max-width: 380px) {
+      .main-header { align-items: flex-start; }
+      .header-right { max-width: 106px; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+      .view-switcher { width: 100%; justify-content: flex-end; }
+      .view-switch-btn { width: 28px; height: 28px; }
+      .view-switch-btn .view-icon { width: 16px; height: 16px; }
+      .header-help, .theme-toggle { width: 30px; height: 30px; }
     }
 
     /* Scrollbar */
@@ -2077,7 +2665,43 @@
         </div>
       </div>
       <div class="header-right">
-        <button class="header-help" onclick="openHelpModal(this)" title="使用说明" aria-label="使用说明">
+        <div class="view-switcher" role="group" aria-label="视图切换">
+          <button class="view-switch-btn view-list view-active" id="viewModeList" onclick="setViewMode('list')" type="button" title="列表视图" aria-label="列表视图" aria-pressed="true">
+            <svg class="view-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path class="skeuo-shadow" d="M5.5 4.5h8.8l5.2 5.1v10.9H5.5z" transform="translate(1 1)"/>
+              <path class="skeuo-face" d="M4.5 3.5h8.8l5.2 5.1v10.9H4.5z"/>
+              <path class="skeuo-dark" d="M13.3 3.5v5.1h5.2z"/>
+              <path class="skeuo-shine" d="M6.2 5.2h6.2" stroke="var(--surface)" stroke-width="1.3" stroke-linecap="round"/>
+              <path class="skeuo-detail" d="M7.2 11h8.2M7.2 14.5h7M7.2 18h4.8" fill="none" stroke="var(--surface)" stroke-width="1.55" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <button class="view-switch-btn view-day" id="viewModeDay" onclick="setViewMode('day')" type="button" title="日视图" aria-label="日视图" aria-pressed="false">
+            <svg class="view-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect class="skeuo-shadow" x="4.8" y="4.8" width="16" height="15.5" rx="3.4"/>
+              <rect class="skeuo-face" x="3.8" y="3.5" width="16" height="15.5" rx="3.4"/>
+              <path class="skeuo-dark" d="M3.8 7.6h16v3h-16z"/>
+              <path class="skeuo-shine" d="M6.2 5.2h6.4" stroke="var(--surface)" stroke-width="1.3" stroke-linecap="round"/>
+              <path class="skeuo-dark" d="M7 2.6h1.8v5H7zM14.8 2.6h1.8v5h-1.8z"/>
+              <rect class="skeuo-detail" x="7.2" y="12.5" width="6.9" height="4.2" rx="1.1"/>
+            </svg>
+          </button>
+          <button class="view-switch-btn view-month" id="viewModeMonth" onclick="setViewMode('month')" type="button" title="月视图" aria-label="月视图" aria-pressed="false">
+            <svg class="view-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect class="skeuo-shadow" x="4.8" y="4.8" width="16" height="15.5" rx="3.4"/>
+              <rect class="skeuo-face" x="3.8" y="3.5" width="16" height="15.5" rx="3.4"/>
+              <path class="skeuo-dark" d="M3.8 7.6h16v3h-16z"/>
+              <path class="skeuo-shine" d="M6.2 5.2h6.4" stroke="var(--surface)" stroke-width="1.3" stroke-linecap="round"/>
+              <path class="skeuo-dark" d="M7 2.6h1.8v5H7zM14.8 2.6h1.8v5h-1.8z"/>
+              <rect class="skeuo-detail" x="6.4" y="12" width="3" height="2.7" rx=".7"/>
+              <rect class="skeuo-detail" x="11" y="12" width="3" height="2.7" rx=".7"/>
+              <rect class="skeuo-detail" x="15.6" y="12" width="2.4" height="2.7" rx=".6"/>
+              <rect class="skeuo-detail" x="6.4" y="16" width="3" height="2.2" rx=".6"/>
+              <rect class="skeuo-detail" x="11" y="16" width="3" height="2.2" rx=".6"/>
+              <rect class="skeuo-detail" x="15.6" y="16" width="2.4" height="2.2" rx=".6"/>
+            </svg>
+          </button>
+        </div>
+        <button class="header-help" id="helpBtn" onclick="openHelpModal(this)" title="使用说明" aria-label="使用说明">
           📘
         </button>
         <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切换主题">🌙</button>
@@ -2089,7 +2713,33 @@
     <!-- Add card -->
     <div class="add-card">
       <div class="add-row">
-        <input class="add-input" type="text" id="todoInput" placeholder="输入待办事项…" maxlength="200" autocomplete="off">
+        <div class="add-input-wrap">
+          <input class="add-input" type="text" id="todoInput" placeholder="输入待办事项…" maxlength="200" autocomplete="off">
+          <button class="add-due-date-btn" id="addDueDateBtn" type="button" onclick="openAddDueDatePicker(event)" title="预期完成日期：今天" aria-label="预期完成日期：今天">
+            <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="14" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 9.5h16"/><path d="M12 12v3l2 1"/></svg>
+          </button>
+          <div class="add-due-date-picker" id="addDueDatePicker" role="dialog" aria-label="选择预期完成时间" hidden>
+            <div class="add-due-date-picker-header">
+              <button class="due-picker-nav-btn" type="button" onclick="shiftAddDuePickerMonth(-1)" aria-label="上个月">‹</button>
+              <strong id="addDuePickerMonth"></strong>
+              <button class="due-picker-nav-btn" type="button" onclick="shiftAddDuePickerMonth(1)" aria-label="下个月">›</button>
+            </div>
+            <div class="due-picker-weekdays" aria-hidden="true"></div>
+            <div class="due-picker-grid" id="addDuePickerGrid"></div>
+            <div class="due-picker-time">
+              <span class="due-picker-time-label">时间</span>
+              <button id="addDueHourInput" class="due-picker-time-select" type="button" value="" aria-label="选择小时" aria-haspopup="listbox" aria-expanded="false" onclick="toggleAddDueTimeMenu('hour', event)">--</button>
+              <span aria-hidden="true">:</span>
+              <button id="addDueMinuteInput" class="due-picker-time-select" type="button" value="" aria-label="选择分钟" aria-haspopup="listbox" aria-expanded="false" onclick="toggleAddDueTimeMenu('minute', event)">--</button>
+              <div class="due-picker-time-menu" id="addDueTimeMenu" role="listbox" aria-label="选择时间" hidden></div>
+              <button type="button" class="due-picker-clear-time" onclick="clearAddDueTime()">不指定</button>
+            </div>
+            <div class="due-picker-footer">
+              <button type="button" class="due-picker-today" onclick="setAddDueDateToday()">今天</button>
+              <button type="button" class="due-picker-done" onclick="closeAddDueDatePicker()">完成</button>
+            </div>
+          </div>
+        </div>
         <button class="cat-picker-btn" id="catPickerBtn" onclick="toggleCatPicker(event)" type="button">
           <span id="catPickerLabel">
             <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16l1.5 5.5v5a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2v-5L4 6.5Z"/><path d="M4 12h4l1.5 2h5l1.5-2h4"/></svg>
@@ -2121,6 +2771,8 @@
         <div class="progress-fill" id="progressFill"></div>
       </div>
     </div>
+
+    <div class="calendar-view" id="calendarView" hidden aria-live="polite"></div>
 
     <!-- Lists -->
     <div id="pendingSection">
@@ -2615,6 +3267,13 @@
   let themeMediaQuery = null;
   let themeScheduleTimer = null;
   let modalScrollState = null;
+  let viewMode = 'list';
+  let selectedAddDueDate = '';
+  let selectedAddDueTime = '';
+  let selectedAddDueHour = '';
+  let selectedAddDueMinute = '';
+  let addDuePickerMonth = new Date();
+  let calendarViewDate = new Date();
   const MOBILE_LONG_PRESS_MS = 560;
   let mobileLongPressTimer = null;
   let mobileLongPressState = null;
@@ -2638,7 +3297,9 @@
     initSidebarWidth();
     initModalScrollGuards();
     initMobileActionMenu();
+    renderViewSwitcher();
     renderAddPriorityLabel();
+    resetAddDueDate();
     loadData();
     initIconGrid();
     document.getElementById('todoInput').addEventListener('keypress', e => {
@@ -2653,11 +3314,15 @@
       if (!e.target.closest('.move-dropdown') && !e.target.closest('.priority-dropdown') &&
           !e.target.closest('.todo-priority-tag') && !e.target.closest('.add-priority-btn') &&
           !e.target.closest('.cat-picker-list') &&
-          !e.target.closest('.cat-picker-btn')) {
+          !e.target.closest('.cat-picker-btn') &&
+          !e.target.closest('#addDueDatePicker') &&
+          !e.target.closest('#addDueDateBtn')) {
         closeMoveDropdown();
         closePriorityDropdown();
         closeCatPicker();
       }
+      if (!e.target.closest('#addDueDatePicker') && !e.target.closest('#addDueDateBtn')) closeAddDueDatePicker();
+      if (!e.target.closest('.due-picker-time-menu') && !e.target.closest('.due-picker-time-select')) closeAddDueTimeMenu();
     });
   });
 
@@ -4044,6 +4709,7 @@
     }
     closePriorityDropdown();
     closeMoveDropdown();
+    closeAddDueDatePicker();
     // Build list
     list.innerHTML = categories.sort((a, b) => a.sort_order - b.sort_order).map(c => `
       <div class="cat-picker-item${c.id === selectedAddCatId ? ' selected' : ''}"
@@ -4106,6 +4772,404 @@
     renderCatPickerLabel();
   }
 
+  const VIEW_MODE_LABELS = { list: '列表视图', day: '日视图', month: '月视图' };
+  const CALENDAR_WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+
+  function renderViewSwitcher() {
+    Object.entries(VIEW_MODE_LABELS).forEach(([mode]) => {
+      const button = document.getElementById(`viewMode${mode[0].toUpperCase()}${mode.slice(1)}`);
+      if (!button) return;
+      const active = mode === viewMode;
+      button.classList.toggle('view-active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  function setViewMode(mode) {
+    if (!VIEW_MODE_LABELS[mode] || mode === viewMode) return;
+    viewMode = mode;
+    renderViewSwitcher();
+    render({ animateLists: true });
+  }
+
+  function calendarDateKey(date) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  function isValidDateKey(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(0);
+    date.setHours(0, 0, 0, 0);
+    date.setFullYear(year, month - 1, day);
+    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+  }
+
+  function parseCalendarDateKey(value) {
+    if (!isValidDateKey(value)) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(0);
+    date.setHours(0, 0, 0, 0);
+    date.setFullYear(year, month - 1, day);
+    return date;
+  }
+
+  function todayDateKey() { return calendarDateKey(new Date()); }
+
+  function todoCreatedDateKey(todo) {
+    const date = new Date(todo?.createdAt);
+    return Number.isNaN(date.getTime()) ? '' : calendarDateKey(date);
+  }
+
+  function todoDueDateKey(todo) {
+    const value = String(todo?.dueDate || '').trim();
+    return isValidDateKey(value) ? value : '';
+  }
+
+  function todoCalendarDateKey(todo) {
+    return todoDueDateKey(todo) || todoCreatedDateKey(todo);
+  }
+
+  function calendarDateLabel(date) {
+    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 · 星期${CALENDAR_WEEKDAYS[date.getDay()]}`;
+  }
+
+  function calendarMonthLabel(date) {
+    return `${date.getFullYear()}年${date.getMonth() + 1}月`;
+  }
+
+  function calendarTaskSort(a, b) {
+    const aKey = todoCalendarDateKey(a) || '9999-99-99';
+    const bKey = todoCalendarDateKey(b) || '9999-99-99';
+    const dateCompare = aKey.localeCompare(bKey);
+    if (dateCompare !== 0) return dateCompare;
+    return String(a.title || '').localeCompare(String(b.title || ''), 'zh-CN');
+  }
+
+  function shiftCalendarDate(delta) {
+    const date = new Date(calendarViewDate);
+    if (viewMode === 'month') date.setDate(1);
+    if (viewMode === 'month') date.setMonth(date.getMonth() + delta);
+    else date.setDate(date.getDate() + delta);
+    calendarViewDate = date;
+    render();
+  }
+
+  function resetCalendarToToday() {
+    calendarViewDate = new Date();
+    render();
+  }
+
+  function openCalendarDay(dateKey) {
+    const date = parseCalendarDateKey(dateKey);
+    if (!date) return;
+    calendarViewDate = date;
+    viewMode = 'day';
+    renderViewSwitcher();
+    render({ animateLists: true });
+  }
+
+  function resetAddDueDate() {
+    selectedAddDueDate = todayDateKey();
+    selectedAddDueTime = '';
+    selectedAddDueHour = '';
+    selectedAddDueMinute = '';
+    addDuePickerMonth = new Date();
+    renderAddDueDateButton();
+  }
+
+  function renderAddDueDateButton() {
+    const button = document.getElementById('addDueDateBtn');
+    if (!button) return;
+    if (!isValidDateKey(selectedAddDueDate)) selectedAddDueDate = todayDateKey();
+    const date = parseCalendarDateKey(selectedAddDueDate);
+    const isToday = selectedAddDueDate === todayDateKey();
+    const time = /^\d{2}:[0-5]\d$/.test(String(selectedAddDueTime || '')) ? ` ${selectedAddDueTime}` : '';
+    const label = date && isToday ? `今天${time}` : date ? `${date.getMonth() + 1}月${date.getDate()}日${time}` : `今天${time}`;
+    button.title = `预期完成时间：${label}，点击修改`;
+    button.setAttribute('aria-label', `预期完成时间：${label}，点击修改`);
+    button.classList.toggle('has-date', !!date && (!isToday || !!time));
+  }
+
+  function openAddDueDatePicker(event) {
+    if (event) event.stopPropagation();
+    const picker = document.getElementById('addDueDatePicker');
+    const button = document.getElementById('addDueDateBtn');
+    if (!picker || !button) return;
+    if (!isValidDateKey(selectedAddDueDate)) resetAddDueDate();
+    closePriorityDropdown();
+    closeMoveDropdown();
+    closeCatPicker();
+    const selected = parseCalendarDateKey(selectedAddDueDate);
+    addDuePickerMonth = selected ? new Date(selected.getFullYear(), selected.getMonth(), 1) : new Date();
+    renderAddDueDatePicker();
+    picker.hidden = false;
+    picker.classList.add('show');
+    button.classList.add('open');
+    const rect = button.getBoundingClientRect();
+    const pickerRect = picker.getBoundingClientRect();
+    const edge = 8;
+    let left = Math.min(Math.max(edge, rect.right - pickerRect.width), window.innerWidth - pickerRect.width - edge);
+    let top = rect.bottom + edge;
+    if (top + pickerRect.height > window.innerHeight - edge) {
+      top = Math.max(edge, rect.top - pickerRect.height - edge);
+    }
+    picker.style.left = `${left}px`;
+    picker.style.top = `${top}px`;
+  }
+
+  function renderAddDueDatePicker() {
+    const monthLabel = document.getElementById('addDuePickerMonth');
+    const weekdays = document.querySelector('.due-picker-weekdays');
+    const grid = document.getElementById('addDuePickerGrid');
+    if (!monthLabel || !grid) return;
+    monthLabel.textContent = calendarMonthLabel(addDuePickerMonth);
+    if (weekdays && !weekdays.childElementCount) {
+      weekdays.innerHTML = CALENDAR_WEEKDAYS.map(day => `<span>${day}</span>`).join('');
+    }
+    const year = addDuePickerMonth.getFullYear();
+    const month = addDuePickerMonth.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const today = todayDateKey();
+    grid.innerHTML = Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(year, month, index - firstDay + 1);
+      const key = calendarDateKey(date);
+      const inMonth = date.getMonth() === month;
+      const classes = [
+        inMonth ? '' : 'is-outside',
+        key === today ? 'is-today' : '',
+        key === selectedAddDueDate ? 'is-selected' : ''
+      ].filter(Boolean).join(' ');
+      return `<button type="button" class="${classes}" onclick="selectAddDueDate('${key}')">${date.getDate()}</button>`;
+    }).join('');
+    renderAddDueTimeControls();
+  }
+
+  function renderAddDueTimeControls() {
+    if (/^\d{2}:[0-5]\d$/.test(String(selectedAddDueTime || ''))) {
+      selectedAddDueHour = selectedAddDueTime.slice(0, 2);
+      selectedAddDueMinute = selectedAddDueTime.slice(3);
+    }
+    const hour = document.getElementById('addDueHourInput');
+    const minute = document.getElementById('addDueMinuteInput');
+    [[hour, selectedAddDueHour, '小时'], [minute, selectedAddDueMinute, '分钟']].forEach(([button, value, label]) => {
+      if (!button) return;
+      button.value = value || '';
+      button.textContent = value || '--';
+      button.classList.toggle('has-value', !!value);
+      button.setAttribute('aria-label', value ? `${label}：${value}` : `选择${label}`);
+    });
+  }
+
+  function closeAddDueTimeMenu() {
+    const menu = document.getElementById('addDueTimeMenu');
+    if (!menu) return;
+    menu.hidden = true;
+    menu.removeAttribute('data-kind');
+    document.querySelectorAll('.due-picker-time-select').forEach(button => button.setAttribute('aria-expanded', 'false'));
+  }
+
+  function toggleAddDueTimeMenu(kind, event) {
+    if (event) event.stopPropagation();
+    const menu = document.getElementById('addDueTimeMenu');
+    const button = document.getElementById(kind === 'hour' ? 'addDueHourInput' : 'addDueMinuteInput');
+    if (!menu || !button) return;
+    if (!menu.hidden && menu.dataset.kind === kind) {
+      closeAddDueTimeMenu();
+      return;
+    }
+    const values = kind === 'hour'
+      ? Array.from({ length: 24 }, (_, value) => String(value).padStart(2, '0'))
+      : Array.from({ length: 12 }, (_, value) => String(value * 5).padStart(2, '0'));
+    const selected = kind === 'hour' ? selectedAddDueHour : selectedAddDueMinute;
+    menu.dataset.kind = kind;
+    menu.innerHTML = `
+      <div class="due-picker-time-menu-header">
+        <strong>${kind === 'hour' ? '选择小时' : '选择分钟'}</strong>
+        <span>${kind === 'hour' ? '24 小时制' : '每 5 分钟'}</span>
+      </div>
+      <div class="due-picker-time-options">
+        ${values.map(value => `<button type="button" class="due-picker-time-option${value === selected ? ' is-selected' : ''}" role="option" aria-selected="${value === selected}" onclick="selectAddDueTime('${kind}', '${value}')">${value}</button>`).join('')}
+      </div>
+    `;
+    menu.hidden = false;
+    document.querySelectorAll('.due-picker-time-select').forEach(control => control.setAttribute('aria-expanded', control === button ? 'true' : 'false'));
+  }
+
+  function selectAddDueTime(kind, value) {
+    if (!/^\d{2}$/.test(String(value))) return;
+    if (kind === 'hour' && Number(value) <= 23) selectedAddDueHour = value;
+    if (kind === 'minute' && Number(value) % 5 === 0 && Number(value) <= 59) selectedAddDueMinute = value;
+    handleAddDueTimeChange();
+    closeAddDueTimeMenu();
+  }
+
+  function shiftAddDuePickerMonth(delta) {
+    addDuePickerMonth.setMonth(addDuePickerMonth.getMonth() + Number(delta || 0));
+    renderAddDueDatePicker();
+  }
+
+  function selectAddDueDate(value) {
+    if (!isValidDateKey(value)) return;
+    selectedAddDueDate = value;
+    const date = parseCalendarDateKey(value);
+    if (date) addDuePickerMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+    renderAddDueDateButton();
+    renderAddDueDatePicker();
+  }
+
+  function setAddDueDateToday() {
+    selectedAddDueDate = todayDateKey();
+    const today = parseCalendarDateKey(selectedAddDueDate);
+    if (today) addDuePickerMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    renderAddDueDateButton();
+    renderAddDueDatePicker();
+  }
+
+  function handleAddDueTimeChange() {
+    const hour = selectedAddDueHour || document.getElementById('addDueHourInput')?.value || '';
+    const minute = selectedAddDueMinute || document.getElementById('addDueMinuteInput')?.value || '';
+    selectedAddDueHour = hour;
+    selectedAddDueMinute = minute;
+    selectedAddDueTime = hour && minute ? `${hour}:${minute}` : '';
+    renderAddDueDateButton();
+    renderAddDueTimeControls();
+  }
+
+  function clearAddDueTime() {
+    selectedAddDueTime = '';
+    selectedAddDueHour = '';
+    selectedAddDueMinute = '';
+    const hour = document.getElementById('addDueHourInput');
+    const minute = document.getElementById('addDueMinuteInput');
+    if (hour) hour.value = '';
+    if (minute) minute.value = '';
+    closeAddDueTimeMenu();
+    renderAddDueTimeControls();
+    renderAddDueDateButton();
+  }
+
+  function closeAddDueDatePicker() {
+    const picker = document.getElementById('addDueDatePicker');
+    if (picker) {
+      picker.classList.remove('show');
+      picker.hidden = true;
+    }
+    closeAddDueTimeMenu();
+    document.getElementById('addDueDateBtn')?.classList.remove('open');
+  }
+
+  function renderCalendarTaskRows(tasks) {
+    if (!tasks.length) return '<div class="calendar-empty">这里暂时没有待办</div>';
+    return tasks.map(makeTodoItem).join('');
+  }
+
+  function renderCalendarTaskGroup(title, tasks) {
+    return `
+      <section class="calendar-task-group">
+        <div class="calendar-task-group-header">
+          <span class="calendar-task-group-title">${title}</span>
+          <span class="calendar-task-group-count">${tasks.length} 项</span>
+        </div>
+        <div class="calendar-task-list calendar-task-card-list">${renderCalendarTaskRows(tasks)}</div>
+      </section>
+    `;
+  }
+
+  function renderCalendarView(filtered, pending, completed) {
+    const container = document.getElementById('calendarView');
+    if (!container) return;
+    const isListView = viewMode === 'list';
+    container.hidden = isListView;
+    if (isListView) return;
+
+    const viewDate = new Date(calendarViewDate);
+    const todayKey = todayDateKey();
+    const tasksByDate = filtered.reduce((groups, todo) => {
+      const key = todoCalendarDateKey(todo) || '__unknown__';
+      (groups[key] ||= []).push(todo);
+      return groups;
+    }, {});
+    const summary = `${pending.length} 项待完成 · ${completed.length} 项已完成`;
+    const monthTitle = calendarMonthLabel(viewDate);
+    const dayTitle = calendarDateLabel(viewDate);
+    const selectedKey = calendarDateKey(viewDate);
+    const viewActions = (previousLabel, nextLabel) => `
+      <div class="calendar-view-actions">
+        <span class="calendar-view-summary">${summary}</span>
+        <div class="calendar-nav" role="group" aria-label="${viewMode === 'day' ? '日视图日期导航' : '月视图日期导航'}">
+          <button class="calendar-nav-btn" type="button" onclick="shiftCalendarDate(-1)" aria-label="${previousLabel}" title="${previousLabel}">‹</button>
+          <button class="calendar-nav-btn" type="button" onclick="resetCalendarToToday()" title="回到今天">回到今天</button>
+          <button class="calendar-nav-btn" type="button" onclick="shiftCalendarDate(1)" aria-label="${nextLabel}" title="${nextLabel}">›</button>
+        </div>
+        ${viewMode === 'day' ? '<button class="calendar-nav-btn" type="button" onclick="setViewMode(\'month\')">月视图</button>' : ''}
+      </div>
+    `;
+
+    if (viewMode === 'day') {
+      const dayTasks = (tasksByDate[selectedKey] || []).slice().sort(calendarTaskSort);
+      const unknownTasks = tasksByDate.__unknown__ || [];
+      container.innerHTML = `
+        <div class="calendar-view-header">
+          <div>
+            <h2 class="calendar-view-title">日视图</h2>
+            <div class="calendar-view-subtitle">${selectedKey === todayKey ? '今天' : '预期完成日期'} · ${dayTitle}</div>
+          </div>
+          ${viewActions('前一天', '后一天')}
+        </div>
+        <section class="calendar-day-panel">
+          <div class="calendar-day-number">${pad(viewDate.getDate())}</div>
+          <div class="calendar-day-copy">
+            <div class="calendar-day-date">${dayTitle}</div>
+            <div class="calendar-day-description">${dayTasks.length ? `当天有 ${dayTasks.length} 项待办` : '当天还没有待办'}</div>
+          </div>
+        </section>
+        ${renderCalendarTaskGroup('当天待办', dayTasks)}
+        ${unknownTasks.length ? renderCalendarTaskGroup('日期未知', unknownTasks) : ''}
+        <div class="calendar-view-note">日视图优先按预期完成日期归类；旧待办没有预期完成日期时使用创建日期。</div>
+      `;
+      return;
+    }
+
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDay = new Date(year, month, 1).getDay();
+    const calendarCells = [];
+    for (let index = 0; index < 42; index += 1) {
+      const dayNumber = index - firstDay + 1;
+      const date = new Date(year, month, dayNumber);
+      const inMonth = dayNumber >= 1 && dayNumber <= daysInMonth;
+      const key = calendarDateKey(date);
+      const count = tasksByDate[key]?.length || 0;
+      const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+      calendarCells.push(`
+        <button class="calendar-day-cell${inMonth ? '' : ' is-outside'}${key === todayKey ? ' is-today' : ''}${key === selectedKey ? ' is-selected' : ''}${isWeekend ? ' is-weekend' : ''}" type="button" onclick="openCalendarDay('${key}')" aria-label="${key}，${count ? `${count} 项待办` : '无待办'}">
+          ${date.getDate()}
+          ${count ? `<span class="calendar-day-cell-count">${count} 项</span>` : ''}
+        </button>
+      `);
+    }
+    const monthPrefix = `${year}-${pad(month + 1)}-`;
+    const monthTasks = filtered.filter(todo => todoCalendarDateKey(todo).startsWith(monthPrefix)).slice().sort(calendarTaskSort);
+    container.innerHTML = `
+      <div class="calendar-view-header">
+        <div>
+          <h2 class="calendar-view-title">月视图 <span class="calendar-month-title">${monthTitle}</span></h2>
+          <div class="calendar-view-subtitle">点击日期查看日视图</div>
+        </div>
+        ${viewActions('上个月', '下个月')}
+      </div>
+      <section class="calendar-month-panel">
+        <div class="calendar-weekdays">${CALENDAR_WEEKDAYS.map((day, index) => `<span class="calendar-weekday${index === 0 || index === 6 ? ' is-weekend' : ''}">${day}</span>`).join('')}</div>
+        <div class="calendar-month-grid">${calendarCells.join('')}</div>
+      </section>
+      ${renderCalendarTaskGroup(`${monthTitle}待办`, monthTasks)}
+      ${tasksByDate.__unknown__?.length ? renderCalendarTaskGroup('日期未知', tasksByDate.__unknown__) : ''}
+      <div class="calendar-view-note">月视图优先按预期完成日期归类；旧待办没有预期完成日期时使用创建日期，日期格数字表示当天待办数量。</div>
+    `;
+  }
+
   /* ── Render todos ── */
   function render({ animateTodoId = null, animateLists = false } = {}) {
     let filtered = todos;
@@ -4140,11 +5204,13 @@
       progCard.style.display = 'none';
     }
 
-    document.getElementById('pendingSection').style.display = total > 0 && pending.length > 0 ? 'block' : 'none';
-    document.getElementById('doneSection').style.display = total > 0 && completed.length > 0 ? 'block' : 'none';
+    const isListView = viewMode === 'list';
+    document.getElementById('pendingSection').style.display = isListView && total > 0 && pending.length > 0 ? 'block' : 'none';
+    document.getElementById('doneSection').style.display = isListView && total > 0 && completed.length > 0 ? 'block' : 'none';
     document.getElementById('todoList').innerHTML = pending.map(makeTodoItem).join('');
     document.getElementById('doneList').innerHTML = visibleCompleted.map(makeTodoItem).join('');
     renderCompletedPagination(completedPage, pageCount);
+    renderCalendarView(filtered, pending, completed);
     if (animateLists) animateListChange();
     if (animateTodoId) requestAnimationFrame(() => animateTodoItem(animateTodoId));
   }
@@ -4308,6 +5374,7 @@
     closeMoveDropdown();
     closePriorityDropdown();
     closeCatPicker();
+    closeAddDueDatePicker();
     openPriorityTodoId = ADD_PRIORITY_TODO_ID;
     portal.innerHTML = Object.entries(PRIORITY_META).map(([value, meta]) => `
       <button type="button" class="priority-option priority-${meta.className}${Number(value) === selectedAddPriority ? ' active' : ''}"
@@ -4355,6 +5422,7 @@
 
     closeMoveDropdown();
     closeCatPicker();
+    closeAddDueDatePicker();
     document.getElementById('addPriorityBtn')?.classList.remove('open');
     openPriorityTodoId = todoId;
     const currentPriority = todoPriorityValue(todo);
@@ -4425,6 +5493,7 @@
     if (!portal) return;
     closePriorityDropdown();
     closeCatPicker();
+    closeAddDueDatePicker();
     const moveTodoItem = todos.find(x => x.id === todoId);
     if (!moveTodoItem || moveTodoItem.completed) {
       closeMoveDropdown();
@@ -4490,13 +5559,15 @@
       const res = await fetch(API + '/todos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, categoryId, priority: selectedAddPriority })
+        body: JSON.stringify({ title, categoryId, priority: selectedAddPriority, dueDate: selectedAddDueDate || todayDateKey(), dueTime: selectedAddDueTime || '' })
       });
       const t = await res.json();
+      if (!res.ok) throw new Error(t.error || '添加待办失败');
       todos.unshift(t);
       input.value = '';
       selectedAddPriority = 0;
       renderAddPriorityLabel();
+      resetAddDueDate();
       renderCats();
       render({ animateTodoId: t.id });
       const cat = categories.find(c => c.id === categoryId);

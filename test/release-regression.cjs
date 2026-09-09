@@ -241,6 +241,33 @@ async function testServer() {
   });
   assert.equal(priorityCreated.status, 200);
   assert.equal(priorityCreated.body.priority, 0, '新待办默认应为普通重要程度');
+  const expectedDueDate = '2026-09-18';
+  const expectedDueTime = '09:30';
+  const dueDateCreated = await request(harness, 'POST', '/api/todos', {
+    title: 'due date regression',
+    categoryId: 'cat_default',
+    dueDate: expectedDueDate,
+    dueTime: expectedDueTime,
+  });
+  assert.equal(dueDateCreated.status, 200);
+  assert.equal(dueDateCreated.body.dueDate, expectedDueDate, '新待办应保存预期完成日期');
+  assert.equal(dueDateCreated.body.dueTime, expectedDueTime, '新待办应保存预期完成时间');
+  const defaultDueDateCreated = await request(harness, 'POST', '/api/todos', {
+    title: 'default due date regression',
+    categoryId: 'cat_default',
+  });
+  const now = new Date();
+  const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  assert.equal(defaultDueDateCreated.body.dueDate, localToday, '未指定日期时应默认使用当天');
+  assert.equal(defaultDueDateCreated.body.dueTime, '', '未指定时间时应保持为空');
+  const dueDateUpdated = await request(harness, 'PATCH', `/api/todos/${dueDateCreated.body.id}`, { dueDate: '2026-09-19', dueTime: '18:45' });
+  assert.equal(dueDateUpdated.status, 200);
+  assert.equal(dueDateUpdated.body.dueDate, '2026-09-19', '预期完成日期应支持修改');
+  assert.equal(dueDateUpdated.body.dueTime, '18:45', '预期完成时间应支持修改');
+  const invalidDueDate = await request(harness, 'PATCH', `/api/todos/${dueDateCreated.body.id}`, { dueDate: '2026-02-30' });
+  assert.equal(invalidDueDate.status, 400, '无效预期完成日期应被拒绝');
+  const invalidDueTime = await request(harness, 'PATCH', `/api/todos/${dueDateCreated.body.id}`, { dueTime: '25:99' });
+  assert.equal(invalidDueTime.status, 400, '无效预期完成时间应被拒绝');
   const priorityUpdated = await request(harness, 'PATCH', `/api/todos/${priorityCreated.body.id}`, { priority: 2 });
   assert.equal(priorityUpdated.status, 200);
   assert.equal(priorityUpdated.body.priority, 2, '待办应支持更新重要程度');
@@ -523,7 +550,7 @@ async function testFrontend() {
   assert.match(html, /function togglePriorityDropdown\(/, '重要程度标签应提供选择浮层');
   assert.match(html, /id="addPriorityBtn" onclick="toggleAddPriorityDropdown\(event\)"/, '新增待办应提供重要程度选择');
   assert.match(html, /function setAddPriority\(/, '新增待办重要程度应可切换');
-  assert.match(html, /JSON\.stringify\(\{ title, categoryId, priority: selectedAddPriority \}\)/, '新增待办应提交重要程度');
+  assert.match(html, /JSON\.stringify\(\{ title, categoryId, priority: selectedAddPriority, dueDate: selectedAddDueDate \|\| todayDateKey\(\), dueTime: selectedAddDueTime \|\| '' \}\)/, '新增待办应提交预期完成日期和时间');
   assert.match(html, /class="todo-labels"[\s\S]*todo-cat-tag[\s\S]*priorityTagMarkup\(t\)[\s\S]*periodBadge/, '待办标签顺序应为分类、重要程度、时间范围');
   assert.match(html, /class="todo-dates"[\s\S]*todo-date-created[\s\S]*todo-date-divider[\s\S]*todo-date-updated/, '创建和更新时间应归入独立信息组');
   assert.match(html, /\.todo-priority-tag \{[\s\S]*width: 72px;[\s\S]*min-width: 72px;/, '重要程度标签应保持紧凑的统一宽度');
@@ -532,7 +559,7 @@ async function testFrontend() {
   assert.match(html, /class="priority-dot priority-dot-\$\{meta\.className\}"/, '重要程度应统一使用颜色圆点');
   assert.match(html, /\.todo-priority-tag \{[\s\S]*justify-content: center;/, '重要程度文字应在标签内居中');
   assert.match(html, /\.todo-priority-tag \.priority-dot \{[\s\S]*position: absolute;/, '重要程度圆点不应影响文字居中');
-  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.add-row \{[\s\S]*display: grid;[\s\S]*grid-template-columns: minmax\(0, 3fr\) minmax\(0, 3fr\) minmax\(0, 2fr\);[\s\S]*\.add-input \{ grid-column: 1 \/ -1;/, '移动端分类、重要程度和添加按钮应按 3:3:2 比例保持同一行');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.add-row \{[\s\S]*display: grid;[\s\S]*grid-template-columns: minmax\(0, 3fr\) minmax\(0, 3fr\) minmax\(0, 2fr\);[\s\S]*\.add-input-wrap \{ grid-column: 1 \/ -1;/, '移动端分类、重要程度和添加按钮应按 3:3:2 比例保持同一行');
   assert.match(html, /function toggleCatPicker\([\s\S]*const rect = btn\.getBoundingClientRect\(\);[\s\S]*const edge = 8;[\s\S]*list\.style\.top = \(rect\.bottom \+ 4\) \+ 'px';[\s\S]*const menuHeight = Math\.min\(list\.scrollHeight, parseFloat\(list\.style\.maxHeight\)\);/, '移动端分类下拉框应锚定按钮并在空间不足时翻转');
   assert.match(html, /function closeCatPicker\([\s\S]*catPickerList[\s\S]*catPickerBtn/, '分类下拉框应提供统一关闭入口');
   assert.match(html, /function toggleCatPicker\([\s\S]*closePriorityDropdown\(\);[\s\S]*closeMoveDropdown\(\);/, '打开分类下拉框前应关闭其他下拉框');
@@ -548,6 +575,30 @@ async function testFrontend() {
   assert.match(html, /--main-max: 920px;/, '主内容区应保留常规桌面的基础宽度');
   assert.match(html, /class="settings-badge theme-status-badge" id="themeStatusBadge"/, '外观状态应使用已配置风格');
   assert.match(html, /\.settings-badge\.theme-status-badge \{[\s\S]*background: rgba\(82,196,26,0\.12\);[\s\S]*color: #52c41a;/, '外观状态应与已配置保持绿色配色');
+  assert.match(html, /id="viewModeList"[\s\S]*id="viewModeDay"[\s\S]*id="viewModeMonth"[\s\S]*id="helpBtn"/, '日月视图按钮应位于使用说明左侧');
+  assert.match(html, /view-switch-btn view-list[\s\S]*view-switch-btn view-day[\s\S]*view-switch-btn view-month/, '日月视图按钮应使用有区分度的语义颜色');
+  assert.match(html, /function setViewMode\(mode\)[\s\S]*renderViewSwitcher\(\)[\s\S]*render\(/, '视图按钮应切换并重新渲染当前视图');
+  assert.match(html, /id="calendarView" hidden/, '日月视图应使用独立的视图容器');
+  assert.match(html, /id="addDueDateBtn"[\s\S]*id="addDueDatePicker"[\s\S]*id="addDueHourInput"[\s\S]*id="addDueMinuteInput"/, '新增待办应提供应用内日期时间选择器');
+  assert.doesNotMatch(html, /id="addDueDateInput"[^>]*type="date"/, '预期完成时间不得调用系统日期选择器');
+  assert.doesNotMatch(html, /<select[^>]+id="addDue(?:Hour|Minute)Input"/, '小时和分钟不得调用系统下拉列表');
+  assert.match(html, /function renderAddDueDatePicker\(/, '预期完成时间应由应用内日历渲染');
+  assert.match(html, /function handleAddDueTimeChange\(/, '预期完成时间应支持小时和分钟');
+  assert.match(html, /id="addDueTimeMenu"[\s\S]*function toggleAddDueTimeMenu\([\s\S]*每 5 分钟/, '小时和分钟应使用紧凑的应用内选择面板');
+  assert.match(html, /function renderCalendarView\(filtered, pending, completed\)[\s\S]*viewMode === 'day'[\s\S]*月视图/, '日月视图应提供基础日历结构');
+  assert.match(html, /function todoDueDateKey\(todo\)[\s\S]*isValidDateKey\(value\)/, '日月视图应优先识别预期完成日期');
+  assert.match(html, /function todoCalendarDateKey\(todo\)[\s\S]*todoDueDateKey\(todo\)[\s\S]*todoCreatedDateKey\(todo\)/, '旧待办应在没有预期完成日期时回退到创建日期');
+  assert.match(html, /onclick="openCalendarDay\('\$\{key\}'\)"/, '月视图日期格应可进入对应日视图');
+  assert.match(html, /\.calendar-weekday\.is-weekend|calendar-weekday\$\{index === 0 \|\| index === 6 \?/, '月视图周末列应有独立标识');
+  assert.match(html, /function shiftCalendarDate\(|function resetCalendarToToday\(/, '日月视图应提供日期导航');
+  assert.match(html, /onclick="resetCalendarToToday\(\)"[\s\S]*回到今天/, '月视图应明确回到今天的动作');
+  assert.match(html, /\.calendar-month-title \{[\s\S]*color: var\(--primary\);[\s\S]*font-size: 1\.3rem;/, '当前月份应作为月视图的醒目标题');
+  assert.match(html, /color-mix\(in srgb, var\(--primary-light\) 72%/, '月视图周末列应使用连续的浅色背景带');
+  assert.match(html, /function renderCalendarTaskRows\(tasks\)[\s\S]*tasks\.map\(makeTodoItem\)/, '日月视图下方应复用普通待办卡片');
+  assert.match(html, /calendar-task-card-list/, '日月视图待办应使用卡片列表容器');
+  assert.match(html, /\.calendar-task-card-list \{[\s\S]*background: var\(--surface\);/, '日月视图分组背景应与待办卡片统一');
+  assert.match(html, /\.main \{[\s\S]*min-height: 100vh;[\s\S]*display: flex;[\s\S]*flex-direction: column;/, '页面内容不足时页脚应由弹性布局推到页面底部');
+  assert.match(html, /日视图优先按预期完成日期归类|月视图优先按预期完成日期归类/, '日月视图应明确预期完成日期规则');
   assert.match(html, /id="syncBackupBtn" onclick="openBackupSyncModal\(\)"/, '备份设置应提供云端同步入口');
   assert.match(html, /id="backupSyncModal"[\s\S]*与云端同步[\s\S]*开始同步/, '云端同步应使用应用内确认弹窗');
   assert.match(html, /function confirmBackupSync\(\)[\s\S]*fetch\(API \+ '\/backup\/sync'/, '同步确认应调用合并同步接口');
