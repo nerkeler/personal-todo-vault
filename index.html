@@ -281,10 +281,19 @@
     /* ── Main ── */
     .main {
       flex: 1;
-      margin-left: var(--sidebar-w);
+      --main-max: 920px;
+      margin-left: max(var(--sidebar-w), calc(var(--sidebar-w) + (100vw - var(--sidebar-w) - var(--main-max)) / 2));
       padding: 28px 32px 30px;
-      max-width: 920px;
+      max-width: var(--main-max);
       container: main-content / inline-size;
+    }
+
+    /* Let wide screens use their extra room without turning the task list into a long scan line. */
+    @media (min-width: 1366px) {
+      .main { --main-max: 1120px; }
+    }
+    @media (min-width: 1680px) {
+      .main { --main-max: 1320px; }
     }
 
     /* Keep only the category header visible while the task list scrolls. */
@@ -968,6 +977,51 @@
     .todo-item:hover .todo-actions { opacity: 1; }
     /* Keep the action column's width while editing so the card does not reflow. */
     .todo-item.editing .todo-actions { visibility: hidden; pointer-events: none; }
+
+    .mobile-action-menu {
+      position: fixed;
+      z-index: 420;
+      width: min(176px, calc(100vw - 24px));
+      box-sizing: border-box;
+      padding: 6px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      box-shadow: var(--shadow-lg);
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+      transform-origin: top right;
+      transition: opacity 0.16s ease, transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .mobile-action-menu[hidden] { display: none; }
+    .mobile-action-menu.show { opacity: 1; transform: translateY(0) scale(1); }
+    .mobile-action-menu-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .mobile-action-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      min-height: 40px;
+      padding: 0 11px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-2);
+      font: inherit;
+      font-size: 0.82rem;
+      text-align: left;
+      cursor: pointer;
+    }
+    .mobile-action-menu-item:hover,
+    .mobile-action-menu-item:focus-visible { background: var(--surface-hover); color: var(--text); outline: none; }
+    .mobile-action-menu-item .menu-action-icon { flex: 0 0 auto; font-size: 1rem; line-height: 1; }
+    .mobile-action-menu-item .menu-action-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mobile-action-menu-item.danger:hover,
+    .mobile-action-menu-item.danger:focus-visible { background: var(--danger-light); color: var(--danger); }
+
+    @media (min-width: 769px) {
+      .mobile-action-menu { display: none !important; }
+    }
 
     .todo-act-btn {
       width: 26px; height: 26px;
@@ -1872,10 +1926,12 @@
         row-gap: 6px;
         padding: 10px 12px;
         align-items: start;
+        -webkit-touch-callout: none;
+        touch-action: pan-y;
       }
       .todo-item > .checkbox {
         grid-column: 1;
-        grid-row: 2;
+        grid-row: 1;
       }
       .todo-item > .todo-body {
         display: contents;
@@ -1883,40 +1939,20 @@
       .todo-body > .todo-text,
       .todo-body > .todo-title-editor {
         grid-column: 2;
-        grid-row: 2;
+        grid-row: 1;
         min-width: 0;
       }
       .todo-actions {
-        position: static;
-        grid-column: 1 / -1;
-        grid-row: 1;
-        width: 100%;
-        min-height: 32px;
-        padding-bottom: 4px;
-        box-sizing: border-box;
-        border-bottom: 1px solid var(--border);
-        justify-content: flex-start;
-        align-items: center;
-        opacity: 1;
-        gap: 2px;
-      }
-      .todo-actions .todo-act-btn.del { order: 1; }
-      .todo-actions .todo-act-btn.edit-action { order: 2; }
-      .todo-actions .todo-act-btn.note-action { order: 3; }
-      .todo-actions .todo-act-btn.reminder-action { order: 4; }
-      .todo-act-btn {
-        width: 28px;
-        height: 28px;
-        font-size: 13px;
+        display: none;
       }
       .todo-body > .todo-progress-row {
         grid-column: 2;
-        grid-row: 3;
+        grid-row: 2;
         min-width: 0;
       }
       .todo-body > .todo-meta {
         grid-column: 1 / -1;
-        grid-row: 4;
+        grid-row: 3;
       }
       .todo-meta {
         align-items: stretch;
@@ -2106,6 +2142,9 @@
     <!-- Portal: 移动分类和重要程度下拉浮层（避免 stacking context 遮挡） -->
     <div id="move-dropdown-portal" style="position:fixed;z-index:100;display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);min-width:160px;overflow:hidden;isolation:isolate;"></div>
     <div class="priority-dropdown" id="priority-dropdown-portal"></div>
+    <div class="mobile-action-menu" id="mobile-action-menu-portal" role="menu" aria-label="待办操作" hidden>
+      <div class="mobile-action-menu-grid" id="mobile-action-menu-grid"></div>
+    </div>
 
 <!-- Category Modal (add/edit) -->
 <div class="modal-overlay" id="catModal">
@@ -2576,6 +2615,11 @@
   let themeMediaQuery = null;
   let themeScheduleTimer = null;
   let modalScrollState = null;
+  const MOBILE_LONG_PRESS_MS = 560;
+  let mobileLongPressTimer = null;
+  let mobileLongPressState = null;
+  let mobileSuppressClickUntil = 0;
+  let mobileActionMenuTodoId = null;
 
   const PRESET_ICONS = [
     '🏷️','📋','📥','📌','📍','💰','💎','💳','🎬','🎥','🎞️','📺',
@@ -2593,6 +2637,7 @@
     initSettingsDisclosure();
     initSidebarWidth();
     initModalScrollGuards();
+    initMobileActionMenu();
     renderAddPriorityLabel();
     loadData();
     initIconGrid();
@@ -2604,6 +2649,7 @@
     });
     // Close dropdowns on outside click
     document.addEventListener('click', e => {
+      if (!e.target.closest('#mobile-action-menu-portal')) closeMobileActionMenu();
       if (!e.target.closest('.move-dropdown') && !e.target.closest('.priority-dropdown') &&
           !e.target.closest('.todo-priority-tag') && !e.target.closest('.add-priority-btn') &&
           !e.target.closest('.cat-picker-list') &&
@@ -2621,6 +2667,192 @@
 
   function findTodoElement(id) {
     return [...document.querySelectorAll('.todo-item')].find(el => el.dataset.id === String(id)) || null;
+  }
+
+  function isMobileActionMenuViewport() {
+    return !!window.matchMedia?.('(max-width: 768px)').matches;
+  }
+
+  function isMobileLongPressExcludedTarget(target) {
+    return target instanceof Element && !!target.closest(
+      'button, a, input, textarea, select, option, .todo-actions, .todo-priority-tag, .todo-cat-tag, .todo-progress-row, .todo-title-editor'
+    );
+  }
+
+  function clearMobileLongPress() {
+    if (mobileLongPressTimer != null) {
+      window.clearTimeout(mobileLongPressTimer);
+      mobileLongPressTimer = null;
+    }
+    if (mobileLongPressState?.item) mobileLongPressState.item.classList.remove('mobile-long-pressing');
+    mobileLongPressState = null;
+  }
+
+  function mobileActionLabel(button) {
+    if (button.classList.contains('reminder-action')) return '提醒';
+    if (button.classList.contains('note-action')) return '笔记';
+    if (button.classList.contains('edit-action')) return '编辑';
+    if (button.classList.contains('del')) return '删除';
+    return button.title || '操作';
+  }
+
+  function closeMobileActionMenu() {
+    clearMobileLongPress();
+    document.querySelectorAll('.todo-item.mobile-action-menu-open').forEach(item => {
+      item.classList.remove('mobile-action-menu-open');
+    });
+    const menu = document.getElementById('mobile-action-menu-portal');
+    if (menu) {
+      menu.classList.remove('show');
+      menu.hidden = true;
+      menu.style.removeProperty('left');
+      menu.style.removeProperty('top');
+      menu.style.removeProperty('visibility');
+    }
+    mobileActionMenuTodoId = null;
+  }
+
+  function openMobileActionMenu(todoItem, anchor = {}) {
+    if (!isMobileActionMenuViewport() || !todoItem?.isConnected) return;
+    const todoId = todoItem.dataset.id;
+    const todo = todos.find(item => item.id === todoId);
+    const menu = document.getElementById('mobile-action-menu-portal');
+    const grid = document.getElementById('mobile-action-menu-grid');
+    if (!todo || !menu || !grid) return;
+
+    closeMobileActionMenu();
+    mobileActionMenuTodoId = todoId;
+    todoItem.classList.add('mobile-action-menu-open');
+    menu.setAttribute('aria-label', '待办操作');
+    grid.replaceChildren();
+
+    const sourceButtons = [...todoItem.querySelectorAll('.todo-actions .todo-act-btn')];
+    sourceButtons.forEach(sourceButton => {
+      const item = document.createElement('button');
+      const icon = document.createElement('span');
+      const label = document.createElement('span');
+      const actionLabel = mobileActionLabel(sourceButton);
+      item.type = 'button';
+      item.className = `mobile-action-menu-item${sourceButton.classList.contains('del') ? ' danger' : ''}`;
+      item.setAttribute('role', 'menuitem');
+      item.setAttribute('aria-label', actionLabel);
+      icon.className = 'menu-action-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = sourceButton.textContent.trim();
+      label.className = 'menu-action-label';
+      label.textContent = actionLabel;
+      item.append(icon, label);
+      item.addEventListener('click', event => {
+        event.stopPropagation();
+        closeMobileActionMenu();
+        sourceButton.click();
+      });
+      grid.append(item);
+    });
+
+    if (!sourceButtons.length) {
+      closeMobileActionMenu();
+      return;
+    }
+
+    menu.hidden = false;
+    menu.style.visibility = 'hidden';
+    const cardRect = todoItem.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const viewportPadding = 12;
+    const anchorX = Number.isFinite(anchor.x) ? anchor.x : cardRect.left + cardRect.width / 2;
+    const anchorY = Number.isFinite(anchor.y) ? anchor.y : cardRect.top + cardRect.height / 2;
+    const gap = 10;
+    const maxLeft = Math.max(viewportPadding, window.innerWidth - menuRect.width - viewportPadding);
+    const maxTop = Math.max(viewportPadding, window.innerHeight - menuRect.height - viewportPadding);
+    let left = anchorX + gap;
+    if (left > maxLeft) left = anchorX - menuRect.width - gap;
+    left = Math.min(Math.max(viewportPadding, left), maxLeft);
+    let top = anchorY + gap;
+    if (top > maxTop) top = anchorY - menuRect.height - gap;
+    top = Math.min(Math.max(viewportPadding, top), maxTop);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+    menu.style.visibility = 'visible';
+    requestAnimationFrame(() => {
+      if (mobileActionMenuTodoId !== todoId || menu.hidden) return;
+      menu.classList.add('show');
+      menu.querySelector('.mobile-action-menu-item')?.focus({ preventScroll: true });
+    });
+  }
+
+  function initMobileActionMenu() {
+    document.addEventListener('pointerdown', event => {
+      if (!isMobileActionMenuViewport() || event.pointerType === 'mouse' || event.isPrimary === false) return;
+      if (event.target.closest('#mobile-action-menu-portal')) return;
+      closeMobileActionMenu();
+      if (isMobileLongPressExcludedTarget(event.target)) return;
+      const todoItem = event.target.closest('.todo-item');
+      if (!todoItem || todoItem.classList.contains('editing')) return;
+      clearMobileLongPress();
+      mobileLongPressState = {
+        item: todoItem,
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        triggered: false,
+      };
+      todoItem.classList.add('mobile-long-pressing');
+      mobileLongPressTimer = window.setTimeout(() => {
+        const state = mobileLongPressState;
+        if (!state || state.item !== todoItem || state.pointerId !== event.pointerId) return;
+        state.triggered = true;
+        mobileSuppressClickUntil = Date.now() + 900;
+        todoItem.classList.remove('mobile-long-pressing');
+        openMobileActionMenu(todoItem, { x: state.x, y: state.y });
+        navigator.vibrate?.(10);
+      }, MOBILE_LONG_PRESS_MS);
+    });
+
+    document.addEventListener('pointermove', event => {
+      const state = mobileLongPressState;
+      if (!state || state.pointerId !== event.pointerId || state.triggered) return;
+      const movedX = event.clientX - state.x;
+      const movedY = event.clientY - state.y;
+      if (Math.hypot(movedX, movedY) > 10) clearMobileLongPress();
+    }, { passive: true });
+
+    document.addEventListener('pointerup', event => {
+      const state = mobileLongPressState;
+      if (!state || state.pointerId !== event.pointerId) return;
+      clearMobileLongPress();
+      if (state.triggered) event.preventDefault();
+    });
+    document.addEventListener('pointercancel', clearMobileLongPress);
+    document.addEventListener('contextmenu', event => {
+      if (!isMobileActionMenuViewport()) return;
+      if (event.target.closest('#mobile-action-menu-portal')) {
+        event.preventDefault();
+        return;
+      }
+      const todoItem = event.target.closest('.todo-item');
+      if (!todoItem || todoItem.classList.contains('editing') || isMobileLongPressExcludedTarget(event.target)) return;
+      event.preventDefault();
+      clearMobileLongPress();
+      openMobileActionMenu(todoItem, { x: event.clientX, y: event.clientY });
+    });
+    document.addEventListener('click', event => {
+      if (!mobileSuppressClickUntil) return;
+      const shouldSuppress = Date.now() <= mobileSuppressClickUntil;
+      mobileSuppressClickUntil = 0;
+      if (shouldSuppress && event.target.closest('.todo-item')) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }, true);
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && mobileActionMenuTodoId) {
+        event.preventDefault();
+        closeMobileActionMenu();
+      }
+    });
+    document.addEventListener('scroll', closeMobileActionMenu, { capture: true, passive: true });
+    window.addEventListener('resize', closeMobileActionMenu);
   }
 
   function animateTodoItem(id) {
