@@ -1,4 +1,10 @@
 {
+  "name": "personal-todo-vault",
+  "version": "1.0.0",
+  "description": "A self-hosted personal todo vault with reminders, Markdown notes, calendar views, and WebDAV backup.",
+  "private": true,
+  "license": "MIT",
+  "repository": "https://github.com/nerkeler/personal-todo-vault.git",
   "dependencies": {
     "nodemailer": "^10.0.0"
   },

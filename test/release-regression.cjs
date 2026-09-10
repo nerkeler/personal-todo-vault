@@ -552,6 +552,7 @@ async function testFrontend() {
   assert.match(html, /function setAddPriority\(/, '新增待办重要程度应可切换');
   assert.match(html, /JSON\.stringify\(\{ title, categoryId, priority: selectedAddPriority, dueDate: selectedAddDueDate \|\| todayDateKey\(\), dueTime: selectedAddDueTime \|\| '' \}\)/, '新增待办应提交预期完成日期和时间');
   assert.match(html, /class="todo-labels"[\s\S]*todo-cat-tag[\s\S]*priorityTagMarkup\(t\)[\s\S]*periodBadge/, '待办标签顺序应为分类、重要程度、时间范围');
+  assert.match(html, /const dueKey = todoDueDateKey\(t\)[\s\S]*daysUntilDue[\s\S]*已逾期[\s\S]*明日/, '待办时间标签应优先按预期完成日期显示相对状态');
   assert.match(html, /class="todo-dates"[\s\S]*todo-date-created[\s\S]*todo-date-divider[\s\S]*todo-date-updated/, '创建和更新时间应归入独立信息组');
   assert.match(html, /\.todo-priority-tag \{[\s\S]*width: 72px;[\s\S]*min-width: 72px;/, '重要程度标签应保持紧凑的统一宽度');
   assert.match(html, /\.todo-cat-tag \{[\s\S]*min-width: 72px[\s\S]*height: 22px;/, '分类标签应与其他标签保持统一尺寸');
@@ -709,6 +710,7 @@ async function testFrontend() {
       checks: [
         'static allowlist and same-origin proxy policy',
         'todo priority defaults, validation, persistence, and UI selector',
+        'due-date status labels and calendar fallback behavior',
         'reminder no-op/concurrency/stale-state protection',
         'WebDAV response and gzip limits',
         '409 content verification and safe restore publish',
