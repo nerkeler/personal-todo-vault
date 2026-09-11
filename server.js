@@ -62,7 +62,7 @@ const { initDB, closeDB, saveDB,
   getSettings, saveSettings, migrateFromJSON } = require('./sqlite.js');
 const { sendEmail, sendTestEmail } = require('./email.js');
 const { getFullConfig, saveAppConfig, publicAppConfig, isEmailConfigured, migrateStoredConfigSecrets } = require('./appConfig.js');
-const { getBackupConfig, publicBackupStatus, testBackupConfig, uploadBackup, restoreBackup } = require('./cloudBackup.js');
+const { getBackupConfig, publicBackupStatus, inspectRemoteBackup, testBackupConfig, uploadBackup, restoreBackup } = require('./cloudBackup.js');
 
 // ── MIME 类型 ────────────────────────────────────────────
 const MIME = {
@@ -684,6 +684,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pathname === '/api/backup/inspect' && req.method === 'POST') {
+    try {
+      const result = await inspectRemoteBackup(getBackupConfig());
+      jsonResR(result);
+    } catch (e) { jsonResR({ error: e.message }, 500); }
+    return;
+  }
+
   if (pathname === '/api/backup/run' && req.method === 'POST') {
     try {
       const result = await runBackup();
@@ -1109,12 +1117,26 @@ function startBackupTimer() {
   console.log(`[BACKUP] auto enabled: every ${config.intervalHours}h`);
 }
 
+function isFreshLocalState() {
+  const hasTodos = getTodos().length > 0;
+  const hasCustomCategories = getCategories().some(category => category.id !== 'cat_default');
+  const hasNotes = noteFilesIn(NOTES_DIR).length > 0;
+  return !hasTodos && !hasCustomCategories && !hasNotes;
+}
+
 async function runBackup() {
   if (restoreInFlight || syncInFlight) throw new Error('数据同步正在进行，请稍候再备份');
   if (backupInFlight) return backupInFlight;
   backupInFlight = (async () => {
     saveDB();
-    return uploadBackup(BACKUP_PATHS, getBackupConfig());
+    const remote = await inspectRemoteBackup(getBackupConfig());
+    if (remote.state === 'invalid') {
+      throw new Error(`云端备份不可用，已停止上传以避免覆盖：${remote.error || remote.message}`);
+    }
+    if (remote.state === 'valid' && isFreshLocalState()) {
+      throw new Error('检测到云端已有备份，而当前本地仍是初始空数据；请先使用“与云端同步”，避免空数据覆盖云端最新指针。');
+    }
+    return uploadBackup(BACKUP_PATHS, getBackupConfig(), { todoCount: getTodos().length });
   })();
   try {
     return await backupInFlight;
@@ -1458,9 +1480,38 @@ async function syncBackupToCurrentData() {
   try {
     saveDB();
     const localContent = fs.readFileSync(DB_FILE);
-    const remote = await restoreBackup(getBackupConfig(), { outputDir: remoteStageDir });
-    const remoteContent = fs.readFileSync(path.join(remoteStageDir, 'todo.db'));
-    const merged = await mergeSyncDatabase(localContent, remoteContent);
+    const backupConfig = getBackupConfig();
+    const remoteState = await inspectRemoteBackup(backupConfig);
+    let remote = { noteDescriptors: [], snapshotPath: null };
+    let merged;
+    if (remoteState.state === 'empty') {
+      const SQL = await initSqlJs({ locateFile: file => path.join(__dirname, file) });
+      const localDb = new SQL.Database(localContent);
+      try {
+        const localTodos = rowsFromDatabase(localDb, 'todos').filter(row => row.id);
+        merged = {
+          content: Buffer.from(localDb.export()),
+          summary: {
+            localOnlyTodos: localTodos.length,
+            cloudOnlyTodos: 0,
+            remoteWins: 0,
+            localWins: localTodos.length,
+            conflictingTodos: 0,
+            cloudOnlyCategories: 0,
+            conflictingCategories: 0,
+          },
+        };
+      } finally {
+        localDb.close();
+      }
+    } else {
+      if (remoteState.state !== 'valid') {
+        throw new Error(`云端备份不可用，无法同步：${remoteState.error || remoteState.message}`);
+      }
+      remote = await restoreBackup(backupConfig, { outputDir: remoteStageDir });
+      const remoteContent = fs.readFileSync(path.join(remoteStageDir, 'todo.db'));
+      merged = await mergeSyncDatabase(localContent, remoteContent);
+    }
     const mergedNotesDir = path.join(mergedStageDir, 'notes');
     fs.mkdirSync(mergedStageDir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(mergedStageDir, 'todo.db'), merged.content, { mode: 0o600 });
@@ -1484,7 +1535,7 @@ async function syncBackupToCurrentData() {
     let cloudSyncError = null;
     let uploaded = null;
     try {
-      uploaded = await uploadBackup(BACKUP_PATHS, getBackupConfig());
+      uploaded = await uploadBackup(BACKUP_PATHS, getBackupConfig(), { todoCount: getTodos().length });
     } catch (e) {
       cloudSyncPending = true;
       cloudSyncError = e.message;

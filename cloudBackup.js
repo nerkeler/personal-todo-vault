@@ -105,7 +105,7 @@ function listNoteFiles(notesDir) {
     });
 }
 
-function buildSnapshot(paths, createdAt = new Date()) {
+function buildSnapshot(paths, createdAt = new Date(), metadata = {}) {
   const { rootDir, dbFile, notesDir } = paths;
   if (!fs.existsSync(dbFile)) throw new Error(`数据库文件不存在：${dbFile}`);
 
@@ -142,6 +142,9 @@ function buildSnapshot(paths, createdAt = new Date()) {
       mtimeMs: note.mtimeMs,
     })),
   };
+  if (Number.isSafeInteger(metadata.todoCount) && metadata.todoCount >= 0) {
+    manifest.todoCount = metadata.todoCount;
+  }
 
   return {
     manifest,
@@ -218,6 +221,32 @@ function safeRemotePath(value, label = '远程路径') {
   return relativePath;
 }
 
+function webdavHttpError(action, statusCode, relativePath = '') {
+  const suffix = relativePath ? `：${relativePath}` : '';
+  if (statusCode === 401) {
+    const error = new Error(`坚果云认证失败（HTTP 401）${suffix}：请确认账号和第三方应用密码正确`);
+    error.code = 'WEBDAV_AUTH';
+    error.statusCode = statusCode;
+    return error;
+  }
+  if (statusCode === 403) {
+    const error = new Error(`坚果云没有访问权限（HTTP 403）${suffix}：请检查第三方应用授权或目录权限`);
+    error.code = 'WEBDAV_FORBIDDEN';
+    error.statusCode = statusCode;
+    return error;
+  }
+  if (statusCode === 404) {
+    const error = new Error(`${action}（HTTP 404）${suffix}：请检查 WebDAV 地址和备份目录`);
+    error.code = 'WEBDAV_NOT_FOUND';
+    error.statusCode = statusCode;
+    return error;
+  }
+  const error = new Error(`${action}（HTTP ${statusCode}）${suffix}`);
+  error.code = 'WEBDAV_HTTP';
+  error.statusCode = statusCode;
+  return error;
+}
+
 async function ensureRemoteDirs(config, directories = [config.backupDir]) {
   const created = [];
   for (const directory of directories) {
@@ -227,7 +256,7 @@ async function ensureRemoteDirs(config, directories = [config.backupDir]) {
       const dirUrl = joinUrl(config.baseUrl, relativePath);
       const res = await webdavRequest('MKCOL', dirUrl, config);
       if (![201, 200, 204, 405].includes(res.statusCode)) {
-        throw new Error(`创建远程目录失败（HTTP ${res.statusCode}）：${relativePath}`);
+        throw webdavHttpError('创建远程目录失败', res.statusCode, relativePath);
       }
       if (res.statusCode === 201) created.push(relativePath);
     }
@@ -239,7 +268,7 @@ async function remoteExists(config, relativePath) {
   const res = await webdavRequest('HEAD', joinUrl(config.baseUrl, config.backupDir, relativePath), config);
   if ([200, 204].includes(res.statusCode)) return true;
   if (res.statusCode === 404) return false;
-  throw new Error(`检查远程文件失败（HTTP ${res.statusCode}）：${relativePath}`);
+  throw webdavHttpError('检查远程文件失败', res.statusCode, relativePath);
 }
 
 async function putObjectIfMissing(config, relativePath, body, contentType) {
@@ -282,7 +311,7 @@ async function getRemoteJson(config, relativePath) {
   );
   if (res.statusCode === 404) return null;
   if (res.statusCode !== 200) {
-    throw new Error(`读取远程清单失败（HTTP ${res.statusCode}）：${relativePath}`);
+    throw webdavHttpError('读取远程清单失败', res.statusCode, relativePath);
   }
   try {
     return JSON.parse(res.body);
@@ -303,7 +332,7 @@ async function getRemoteBuffer(config, relativePath) {
   );
   if (res.statusCode === 404) return null;
   if (res.statusCode !== 200) {
-    throw new Error(`读取远程备份对象失败（HTTP ${res.statusCode}）：${safePath}`);
+    throw webdavHttpError('读取远程备份对象失败', res.statusCode, safePath);
   }
   if (!Buffer.isBuffer(res.body) || res.body.length > MAX_RESTORE_OBJECT_BYTES) {
     throw new Error(`远程备份对象过大或格式无效：${safePath}`);
@@ -486,6 +515,80 @@ async function migrateSnapshotFolders(config = getBackupConfig(), options = {}) 
   };
 }
 
+async function loadLatestSnapshot(config) {
+  const latest = await getRemoteJson(config, 'latest.json');
+  if (!latest) return { latest: null, manifest: null, snapshotPath: null, format: null };
+
+  if (latest.type === 'snapshot' && Array.isArray(latest.notes)) {
+    return { latest, manifest: latest, snapshotPath: 'latest.json', format: 'direct-snapshot' };
+  }
+  if (typeof latest.snapshotPath !== 'string') {
+    return { latest, manifest: null, snapshotPath: null, format: 'invalid-pointer' };
+  }
+
+  const snapshotPath = safeRemotePath(latest.snapshotPath, '快照路径');
+  const manifest = await getRemoteJson(config, snapshotPath);
+  return { latest, manifest, snapshotPath, format: 'latest-pointer' };
+}
+
+async function inspectRemoteBackup(config = getBackupConfig()) {
+  if (!config.configured) {
+    throw new Error('坚果云 WebDAV 未配置完整，请填写账号和应用密码');
+  }
+  const loaded = await loadLatestSnapshot(config);
+  if (!loaded.latest) {
+    return {
+      success: true,
+      state: 'empty',
+      hasBackup: false,
+      backupDir: config.backupDir,
+      message: '目录可访问，但还没有可用的云端快照。',
+    };
+  }
+
+  let manifest;
+  try {
+    manifest = validateRestoreManifest(loaded.manifest);
+  } catch (e) {
+    return {
+      success: true,
+      state: 'invalid',
+      hasBackup: true,
+      backupDir: config.backupDir,
+      snapshotPath: loaded.snapshotPath,
+      format: loaded.format,
+      error: e.message,
+      message: '目录可访问，但其中没有可验证的应用备份。',
+    };
+  }
+  if (loaded.latest.databaseHash && loaded.latest.databaseHash !== manifest.database.hash) {
+    return {
+      success: true,
+      state: 'invalid',
+      hasBackup: true,
+      backupDir: config.backupDir,
+      snapshotPath: loaded.snapshotPath,
+      format: loaded.format,
+      error: 'latest.json 与快照中的数据库哈希不一致',
+      message: '云端最新指针与快照内容不一致，暂不执行同步。',
+    };
+  }
+  return {
+    success: true,
+    state: 'valid',
+    hasBackup: true,
+    backupDir: config.backupDir,
+    snapshotPath: loaded.snapshotPath,
+    format: loaded.format,
+    snapshotId: manifest.snapshotId,
+    createdAt: manifest.createdAt,
+    databaseBytes: manifest.database.size,
+    todoCount: Number.isSafeInteger(manifest.todoCount) ? manifest.todoCount : null,
+    noteCount: manifest.notes.length,
+    message: '已找到可用的云端快照。',
+  };
+}
+
 async function remoteObjectMatches(config, relativePath, localCompressed) {
   if (!Buffer.isBuffer(localCompressed) || localCompressed.length > MAX_RESTORE_OBJECT_BYTES) {
     throw new Error(`本地备份对象过大或格式无效：${relativePath}`);
@@ -617,16 +720,23 @@ async function restoreBackup(config = getBackupConfig(), options = {}) {
   const requestedSnapshot = options.snapshot || 'latest';
   let snapshotPath = requestedSnapshot;
   let latest = null;
+  let manifest;
   if (requestedSnapshot === 'latest') {
-    latest = await getRemoteJson(config, 'latest.json');
-    if (!latest || typeof latest.snapshotPath !== 'string') {
-      throw new Error('远程 latest.json 不存在或缺少 snapshotPath');
+    const loaded = await loadLatestSnapshot(config);
+    latest = loaded.latest;
+    if (!latest) {
+      throw new Error('远程备份目录中没有 latest.json，暂时没有可恢复的云端快照');
     }
-    snapshotPath = safeRemotePath(latest.snapshotPath, '快照路径');
+    if (!loaded.manifest) {
+      throw new Error('远程 latest.json 缺少有效的 snapshotPath，无法恢复');
+    }
+    snapshotPath = loaded.snapshotPath;
+    manifest = loaded.manifest;
   } else {
     snapshotPath = safeRemotePath(requestedSnapshot, '快照路径');
+    manifest = await getRemoteJson(config, snapshotPath);
   }
-  const manifest = validateRestoreManifest(await getRemoteJson(config, snapshotPath));
+  manifest = validateRestoreManifest(manifest);
   if (latest?.databaseHash && latest.databaseHash !== manifest.database.hash) {
     throw new Error('latest.json 与快照中的数据库哈希不一致');
   }
@@ -668,11 +778,7 @@ async function restoreBackup(config = getBackupConfig(), options = {}) {
 }
 
 async function readPreviousSnapshot(config) {
-  const latest = await getRemoteJson(config, 'latest.json');
-  if (!latest) return null;
-  if (latest.type === 'snapshot' && Array.isArray(latest.notes)) return latest;
-  if (!latest.snapshotPath) return null;
-  return getRemoteJson(config, latest.snapshotPath);
+  return (await loadLatestSnapshot(config)).manifest;
 }
 
 async function testBackupConfig(config = getBackupConfig()) {
@@ -686,17 +792,19 @@ async function testBackupConfig(config = getBackupConfig()) {
     `${config.backupDir}/objects/notes`,
     `${config.backupDir}/snapshots`,
   ]);
+  const remote = await inspectRemoteBackup(config);
   return {
     success: true,
     provider: config.provider,
     baseUrl: config.baseUrl,
     backupDir: config.backupDir,
     strategy: 'content-addressed-incremental',
+    remote,
     durationMs: Date.now() - startedAt,
   };
 }
 
-async function uploadBackup(paths, config = getBackupConfig()) {
+async function uploadBackup(paths, config = getBackupConfig(), metadata = {}) {
   if (!config.configured) {
     throw new Error('坚果云 WebDAV 未配置完整，请填写账号和应用密码');
   }
@@ -712,7 +820,7 @@ async function uploadBackup(paths, config = getBackupConfig()) {
   ]);
 
   const previous = await readPreviousSnapshot(config);
-  const { manifest, dbContent, notes, snapshotPath, latestPath } = buildSnapshot(paths, createdAt);
+  const { manifest, dbContent, notes, snapshotPath, latestPath } = buildSnapshot(paths, createdAt, metadata);
   const uploaded = [];
   const reused = [];
   let bytesUploaded = 0;
@@ -795,6 +903,7 @@ async function uploadBackup(paths, config = getBackupConfig()) {
 module.exports = {
   getBackupConfig,
   publicBackupStatus,
+  inspectRemoteBackup,
   testBackupConfig,
   uploadBackup,
   restoreBackup,

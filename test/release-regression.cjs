@@ -88,6 +88,7 @@ function createServerHarness() {
     './cloudBackup.js': {
       getBackupConfig: () => ({ configured: false, autoEnabled: false }),
       publicBackupStatus: () => ({ configured: false }),
+      inspectRemoteBackup: async () => { throw new Error('坚果云 WebDAV 未配置完整，请填写账号和应用密码'); },
       testBackupConfig: async () => ({ success: true }),
       uploadBackup: async () => ({ success: true }),
       restoreBackup: async () => { throw new Error('坚果云 WebDAV 未配置完整，请填写账号和应用密码'); },
@@ -418,6 +419,14 @@ async function testCloudBackup() {
   assert.equal(restored.noteCount, 1);
   assert.deepEqual(fs.readFileSync(path.join(restoredPath, 'todo.db')), dbContent);
   assert.deepEqual(fs.readFileSync(path.join(restoredPath, 'notes', 'synthetic.md')), noteContent);
+  const inspected = await context.module.exports.inspectRemoteBackup(config);
+  assert.equal(inspected.state, 'valid', '已有有效目录应能完成云端预检');
+  assert.equal(inspected.noteCount, 1);
+  objects.set(remoteKey('latest.json'), Buffer.from(json(manifest)));
+  const directRestorePath = path.join(TEMP_ROOT, 'direct-cloud');
+  const directRestore = await context.module.exports.restoreBackup(config, { outputDir: directRestorePath });
+  assert.equal(directRestore.snapshotPath, 'latest.json', '直接快照格式应能被恢复流程兼容');
+  objects.set(remoteKey('latest.json'), Buffer.from(json(latest)));
   assert(requests.some(item => item.key.endsWith('/latest.json') && item.options.maxResponseBytes === 128 * 1024 * 1024));
   assert(requests.some(item => item.options.binary && item.options.maxResponseBytes === 128 * 1024 * 1024));
   await assert.rejects(
@@ -468,6 +477,16 @@ async function testCloudBackup() {
     "putObjectIfMissing({baseUrl:'https://mock.invalid/dav/',backupDir:'audit',username:'u',password:'p'},'objects/a.gz',Buffer.from('not gzip'),'application/gzip')",
     invalidConflict,
   ), /冲突|远程/);
+
+  const authContext = createCloudContext(async method => {
+    if (method === 'MKCOL') return { statusCode: 401, body: '' };
+    return { statusCode: 404, body: '' };
+  });
+  await assert.rejects(
+    authContext.module.exports.testBackupConfig(config),
+    /坚果云认证失败.*第三方应用密码/,
+    'WebDAV 401 应提示认证问题而不是目录冲突',
+  );
 
   const legacyName = '20260808-123456-abcd1234.json';
   const migrationObjects = new Map();
@@ -601,6 +620,9 @@ async function testFrontend() {
   assert.match(html, /\.main \{[\s\S]*min-height: 100vh;[\s\S]*display: flex;[\s\S]*flex-direction: column;/, '页面内容不足时页脚应由弹性布局推到页面底部');
   assert.match(html, /日视图优先按预期完成日期归类|月视图优先按预期完成日期归类/, '日月视图应明确预期完成日期规则');
   assert.match(html, /id="syncBackupBtn" onclick="openBackupSyncModal\(\)"/, '备份设置应提供云端同步入口');
+  assert.match(html, /id="backupActionHint" aria-live="polite"/, '备份操作区应明确说明保存配置与首次同步顺序');
+  assert.match(html, /function inspectBackupBeforeSync\([\s\S]*fetch\(API \+ '\/backup\/inspect'/, '开始同步前应先检查云端备份状态');
+  assert.match(html, /连接测试成功，请点击“保存配置”/, '测试成功后应明确引导保存配置');
   assert.match(html, /id="backupSyncModal"[\s\S]*与云端同步[\s\S]*开始同步/, '云端同步应使用应用内确认弹窗');
   assert.match(html, /function confirmBackupSync\(\)[\s\S]*fetch\(API \+ '\/backup\/sync'/, '同步确认应调用合并同步接口');
   assert.doesNotMatch(html, /function confirmBackupSync\(\)[\s\S]*\bconfirm\(/, '云端同步不应使用系统 confirm 弹窗');

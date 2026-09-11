@@ -2210,6 +2210,14 @@
     }
     .settings-meta { margin-top: 10px; }
     .settings-actions-inline { justify-content: flex-start; margin-top: 12px; flex-wrap: wrap; }
+    .backup-action-hint {
+      min-height: 18px;
+      margin-top: 8px;
+      color: var(--text-3);
+    }
+    .backup-action-hint.is-ready { color: #52c41a; }
+    .backup-action-hint.is-warning { color: #d89614; }
+    .backup-action-hint.is-error { color: var(--danger); }
     .settings-footer-actions { justify-content: flex-end; margin-top: 16px; }
     .settings-save-result { text-align: right; margin-top: 8px; min-height: 18px; }
     .modal-btn:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -2954,6 +2962,7 @@
           <button class="modal-btn" id="syncBackupBtn" onclick="openBackupSyncModal()">与云端同步</button>
           <span class="settings-result" id="backupResult"></span>
         </div>
+        <div class="settings-meta backup-action-hint" id="backupActionHint" aria-live="polite"></div>
       </div>
     </details>
 
@@ -2979,7 +2988,7 @@
       <li>无法判断先后时保留本地版本，并在同步结果中提示。</li>
       <li>同名笔记发生差异时也会保留较新的内容。</li>
     </ul>
-    <div class="backup-sync-summary" id="backupSyncSummary">同步前会完整校验云端快照；当前本地数据会先保存到安全备份目录。</div>
+    <div class="backup-sync-summary" id="backupSyncSummary" role="status" aria-live="polite">同步前会完整校验云端快照；当前本地数据会先保存到安全备份目录。</div>
     <div class="backup-sync-safety">云端历史快照不会被删除。若上传失败，本地合并结果仍会保留，可以稍后再次同步。</div>
     <div class="modal-actions">
       <button class="modal-btn cancel" onclick="closeBackupSyncModal()">取消</button>
@@ -3210,6 +3219,9 @@
     emailEnabled: false, checkTime: '09:00', smtpReady: false, backup: null
   };
   let backupStatus = { configured: false, backupDir: 'todo-app-backups', provider: 'jianguoyun', lastBackup: null };
+  let backupTestState = null;
+  let backupRemoteState = null;
+  let syncPreflightReady = false;
   let selectedIcon = '🏷️';
   let selectedAddCatId = localStorage.getItem('lastUsedCatId') || 'cat_default';
   let defaultCatId = null; // resolved after categories load
@@ -3994,6 +4006,22 @@
     el.style.color = kind === 'ok' ? '#52c41a' : kind === 'error' ? 'var(--danger)' : 'var(--text-3)';
   }
 
+  function setBackupActionHint(text, kind = 'muted') {
+    const hint = document.getElementById('backupActionHint');
+    if (!hint) return;
+    hint.textContent = text || '';
+    hint.className = `settings-meta backup-action-hint${kind === 'ok' ? ' is-ready' : kind === 'warning' ? ' is-warning' : kind === 'error' ? ' is-error' : ''}`;
+  }
+
+  function backupRemoteSummary(remote) {
+    if (!remote) return '';
+    if (remote.state === 'empty') return '云端目录可访问，但还没有快照。';
+    if (remote.state === 'invalid') return `云端目录可访问，但备份不可用：${remote.error || remote.message || '快照格式无效'}。`;
+    const created = remote.createdAt ? new Date(remote.createdAt).toLocaleString() : '时间未知';
+    const todoCount = remote.todoCount === null || remote.todoCount === undefined ? '待办数量未知' : `${remote.todoCount} 个待办`;
+    return `已找到云端快照：${created} · ${todoCount} · ${remote.noteCount ?? 0} 个笔记。`;
+  }
+
   function setButtonBusy(id, busy, text) {
     const btn = document.getElementById(id);
     if (!btn) return null;
@@ -4108,6 +4136,8 @@
       if (!res.ok) throw new Error(updated.error || '保存配置失败');
       settings = normalizeSettings(updated);
       backupStatus = settings.backup || settings.webdav || backupStatus;
+      backupTestState = null;
+      backupRemoteState = null;
       populateSettingsForm();
       setResult('settingsSaveResult', '✅ 配置已保存，服务端已按新配置生效。', 'ok');
     } catch (e) {
@@ -4159,6 +4189,21 @@
       meta.textContent = `目录：${status.backupDir || 'todo-app-backups'} · 增量上传 / 完整快照 · ${status.autoEnabled ? `自动备份：每 ${status.intervalHours || 24} 小时` : '自动备份：未启用'}`;
     }
 
+    if (!configured) {
+      setBackupActionHint(
+        backupTestState?.success
+          ? '连接测试成功，请点击“保存配置”；保存后才能执行备份或云端同步。'
+          : '请先保存配置；测试按钮使用临时表单数据，不会自动保存应用密码。',
+        backupTestState?.success ? 'ok' : 'muted',
+      );
+    } else if (backupRemoteState?.state === 'valid') {
+      setBackupActionHint(`${backupRemoteSummary(backupRemoteState)} 首次使用建议先点“与云端同步”。`, 'ok');
+    } else if (backupRemoteState?.state === 'invalid') {
+      setBackupActionHint('检测到云端目录，但快照不可用；请检查目录或改用新的备份目录。', 'error');
+    } else {
+      setBackupActionHint('配置已保存。首次使用请先点“与云端同步”，系统会先检查云端再合并。', 'muted');
+    }
+
     const lastBackup = status.lastBackup || backupStatus?.lastBackup;
     if (lastBackup?.success) {
       setResult('backupResult', `最近同步：${new Date(lastBackup.createdAt).toLocaleString()} · 上传对象 ${lastBackup.uploadedObjects ?? '-'} 个，复用 ${lastBackup.reusedObjects ?? '-'} 个 · ${lastBackup.noteCount ?? 0} 个笔记 · ${formatBytes(lastBackup.bytes)}`);
@@ -4193,7 +4238,11 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '坚果云测试失败');
-      setResult('backupResult', `✅ 坚果云连接成功：${data.backupDir || 'todo-app-backups'}（${data.durationMs}ms）`, 'ok');
+      backupTestState = data;
+      backupRemoteState = data.remote || null;
+      const remoteCopy = backupRemoteSummary(data.remote);
+      setResult('backupResult', `✅ 坚果云连接成功：${data.backupDir || 'todo-app-backups'}（${data.durationMs}ms）${remoteCopy ? ` ${remoteCopy}` : ''}`, 'ok');
+      setBackupActionHint('连接测试成功，请点击“保存配置”；保存后才能执行备份或云端同步。', 'ok');
     } catch (e) {
       setResult('backupResult', `❌ ${e.message}`, 'error');
     } finally {
@@ -4225,9 +4274,39 @@
   function openBackupSyncModal() {
     const status = backupStatus || {};
     if (!status.configured) { renderBackupStatus(); return; }
+    syncPreflightReady = false;
     const summary = document.getElementById('backupSyncSummary');
-    if (summary) summary.textContent = '同步前会完整校验云端快照；当前本地数据会先保存到安全备份目录。';
+    const confirm = document.getElementById('confirmBackupSyncBtn');
+    if (summary) summary.textContent = '正在检查云端目录和最新快照…';
+    if (confirm) confirm.disabled = true;
     showModal('backupSyncModal', document.getElementById('syncBackupBtn'));
+    inspectBackupBeforeSync();
+  }
+
+  async function inspectBackupBeforeSync() {
+    const summary = document.getElementById('backupSyncSummary');
+    const confirm = document.getElementById('confirmBackupSyncBtn');
+    try {
+      const res = await fetch(API + '/backup/inspect', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '云端检查失败');
+      backupRemoteState = data;
+      if (data.state === 'invalid') {
+        if (summary) summary.textContent = `${backupRemoteSummary(data)} 已停止同步，避免覆盖可能有问题的云端数据。`;
+        if (confirm) confirm.disabled = true;
+        return;
+      }
+      if (summary) {
+        summary.textContent = data.state === 'empty'
+          ? '云端目录已存在，但没有快照；本地数据会被安全地上传为第一份快照。'
+          : `${backupRemoteSummary(data)} 同步后本地和云端新增内容都会保留。`;
+      }
+      syncPreflightReady = true;
+      if (confirm) confirm.disabled = false;
+    } catch (e) {
+      if (summary) summary.textContent = `云端检查失败：${e.message} 请修正配置后重试。`;
+      if (confirm) confirm.disabled = true;
+    }
   }
 
   function closeBackupSyncModal() {
@@ -4237,6 +4316,7 @@
   async function confirmBackupSync() {
     const status = backupStatus || {};
     if (!status.configured) { closeBackupSyncModal(); renderBackupStatus(); return; }
+    if (!syncPreflightReady) return;
     setButtonBusy('confirmBackupSyncBtn', true, '同步中…');
     setButtonBusy('syncBackupBtn', true, '同步中…');
     setResult('backupResult', '正在校验并合并本地与云端数据，请稍候…');
