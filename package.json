@@ -1,6 +1,6 @@
 {
   "name": "personal-todo-vault",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A self-hosted personal todo vault with reminders, Markdown notes, calendar views, and WebDAV backup.",
   "private": true,
   "license": "MIT",
