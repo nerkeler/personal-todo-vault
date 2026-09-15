@@ -2482,7 +2482,14 @@
         padding: 10px 12px;
         align-items: start;
         -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
         touch-action: pan-y;
+      }
+      .todo-item.editing,
+      .todo-item.editing .edit-input {
+        -webkit-user-select: text;
+        user-select: text;
       }
       .todo-item > .checkbox {
         grid-column: 1;
@@ -3353,6 +3360,7 @@
     const grid = document.getElementById('mobile-action-menu-grid');
     if (!todo || !menu || !grid) return;
 
+    window.getSelection?.()?.removeAllRanges();
     closeMobileActionMenu();
     mobileActionMenuTodoId = todoId;
     todoItem.classList.add('mobile-action-menu-open');

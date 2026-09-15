@@ -631,6 +631,8 @@ async function testFrontend() {
   assert.match(html, /@media \(min-width: 1366px\) \{[\s\S]*\.main \{ --main-max: 1120px; \}/, '宽屏主内容区应适度扩宽');
   assert.match(html, /@media \(min-width: 1680px\) \{[\s\S]*\.main \{ --main-max: 1320px; \}/, '大屏主内容区应有更高但有限的宽度上限');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-item \{[\s\S]*display: grid;[\s\S]*grid-template-columns: 20px minmax\(0, 1fr\);[\s\S]*row-gap: 6px;[\s\S]*padding: 10px 12px;/, '移动端待办应收紧卡片垂直边距');
+  assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-item \{[\s\S]*-webkit-user-select: none;[\s\S]*user-select: none;/, '移动端待办卡片不应触发文字选择');
+  assert.match(html, /\.todo-item\.editing,[\s\S]*\.todo-item\.editing \.edit-input \{[\s\S]*user-select: text;/, '编辑待办时仍应允许选择和编辑文字');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-item > \.todo-body \{[\s\S]*display: contents;/, '移动端待办主体应允许标题、进度和元信息参与稳定排版');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-body > \.todo-text,[\s\S]*\.todo-body > \.todo-title-editor \{[\s\S]*grid-column: 2;[\s\S]*grid-row: 1;/, '移动端待办标题应位于卡片顶部');
   assert.match(html, /@media \(max-width: 768px\) \{[\s\S]*\.todo-actions \{[\s\S]*display: none;/, '移动端默认应隐藏卡片操作栏');
@@ -640,6 +642,7 @@ async function testFrontend() {
   assert.match(html, /const MOBILE_LONG_PRESS_MS = 560;/, '移动端长按应使用稳定的触发时长');
   assert.match(html, /function initMobileActionMenu\([\s\S]*pointerdown[\s\S]*pointermove[\s\S]*Math\.hypot\(movedX, movedY\) > 10[\s\S]*pointerup/, '移动端长按应支持滑动取消并避免影响滚动');
   assert.match(html, /function openMobileActionMenu\(todoItem, anchor = \{\}\)[\s\S]*sourceButtons[\s\S]*sourceButton\.click\(\)/, '移动端菜单应复用原有操作按钮行为');
+  assert.match(html, /function openMobileActionMenu\(todoItem, anchor = \{\}\)[\s\S]*window\.getSelection\?\.\(\)\?\.removeAllRanges\(\);/, '打开移动端操作菜单时应清理残留文字选区');
   assert.match(html, /const anchorX = Number\.isFinite\(anchor\.x\)[\s\S]*const anchorY = Number\.isFinite\(anchor\.y\)/, '移动端操作菜单应锚定触发位置');
   assert.match(html, /function closeMobileActionMenu\([\s\S]*mobile-action-menu-open[\s\S]*menu\.hidden = true/, '移动端操作菜单应提供统一关闭入口');
   assert.match(html, /event\.key === 'Escape'[\s\S]*closeMobileActionMenu\(\)/, '移动端操作菜单应支持 Escape 关闭');
