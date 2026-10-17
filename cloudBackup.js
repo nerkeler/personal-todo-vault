@@ -10,7 +10,10 @@ const DEFAULT_WEBDAV_URL = 'https://dav.jianguoyun.com/dav/';
 const PROVIDER = 'jianguoyun';
 const DEFAULT_BACKUP_DIR = 'todo-app-backups';
 const DEFAULT_TIMEOUT_MS = 30000;
-const BACKUP_SCHEMA_VERSION = 2;
+const BACKUP_SCHEMA_VERSION = 3;
+// Version 3 adds per-note updatedAt version clocks (see notes .meta.json).
+// Version 2 snapshots remain readable; they fall back to mtime comparison.
+const SUPPORTED_SCHEMA_VERSIONS = [2, 3];
 const DEFAULT_MAX_RESTORE_BYTES = 128 * 1024 * 1024;
 const configuredRestoreLimit = Number(process.env.TODO_RESTORE_MAX_BYTES);
 const MAX_RESTORE_OBJECT_BYTES = Number.isSafeInteger(configuredRestoreLimit) && configuredRestoreLimit > 0
@@ -84,8 +87,24 @@ function gzipBuffer(buffer) {
   return zlib.gzipSync(buffer, { level: zlib.constants.Z_BEST_COMPRESSION });
 }
 
+function readNoteMetaIn(notesDir) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(notesDir, '.meta.json'), 'utf8'));
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function noteVersionTime(value) {
+  if (typeof value !== 'string') return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
 function listNoteFiles(notesDir) {
   if (!fs.existsSync(notesDir)) return [];
+  const noteMeta = readNoteMetaIn(notesDir);
   return fs.readdirSync(notesDir)
     .filter(name => name.endsWith('.md'))
     .sort()
@@ -99,6 +118,8 @@ function listNoteFiles(notesDir) {
         hash,
         size: content.length,
         mtimeMs: stat.mtimeMs,
+        updatedAt: noteVersionTime(noteMeta[name]) ||
+          new Date(stat.mtimeMs).toISOString(),
         content,
         objectPath: `objects/notes/${hash}.md.gz`,
       };
@@ -140,6 +161,7 @@ function buildSnapshot(paths, createdAt = new Date(), metadata = {}) {
       objectPath: note.objectPath,
       size: note.size,
       mtimeMs: note.mtimeMs,
+      updatedAt: note.updatedAt,
     })),
   };
   if (Number.isSafeInteger(metadata.todoCount) && metadata.todoCount >= 0) {
@@ -611,7 +633,7 @@ function validHash(value) {
 }
 
 function validateRestoreManifest(manifest) {
-  if (!manifest || manifest.type !== 'snapshot' || manifest.schemaVersion !== BACKUP_SCHEMA_VERSION) {
+  if (!manifest || manifest.type !== 'snapshot' || !SUPPORTED_SCHEMA_VERSIONS.includes(manifest.schemaVersion)) {
     throw new Error(`不支持的备份清单版本：${manifest?.schemaVersion ?? '未知'}`);
   }
   const database = manifest.database;
@@ -768,6 +790,7 @@ async function restoreBackup(config = getBackupConfig(), options = {}) {
         hash: note.hash,
         size: note.size,
         mtimeMs: note.mtimeMs,
+        updatedAt: noteVersionTime(note.updatedAt),
       })),
       createdAt: manifest.createdAt,
     };

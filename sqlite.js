@@ -11,7 +11,9 @@ const DB_FILE = process.env.TODO_DB_FILE || path.join(DATA_DIR, 'todo.db');
 const JSON_FILE = process.env.TODO_JSON_FILE || path.join(DATA_DIR, 'data.json');
 const BACKUP_DIR = process.env.TODO_BACKUP_DIR || path.join(DATA_DIR, 'backups');
 const MAX_BACKUPS = 10;
+const BACKUP_COPY_MIN_INTERVAL_MS = 30 * 60 * 1000;
 let db = null;
+let lastBackupCopyAt = 0;
 
 const PRESET_CATEGORIES = [
   { id: 'cat_default',   name: '默认',   icon: '📥', sort_order: 0 },
@@ -128,19 +130,26 @@ async function initDB() {
 }
 
 // ── 持久化数据库文件 ───────────────────────────────────
-function saveDB() {
+function saveDB(options = {}) {
   if (!db) return;
+  const forceBackup = options.forceBackup === true;
   const data = db.export();
   const buffer = Buffer.from(data);
   const tempFile = `${DB_FILE}.${process.pid}.tmp`;
 
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  if (fs.existsSync(DB_FILE)) {
-    const stamp = new Date().toISOString()
-      .replace(/[-:]/g, '')
-      .replace('T', '-')
-      .replace('Z', '');
-    fs.copyFileSync(DB_FILE, path.join(BACKUP_DIR, `todo-${stamp}.db`));
+  // Strategy: persist every change immediately, but only snapshot the previous
+  // database file on a throttled interval (or before destructive operations),
+  // so rapid routine edits cannot flush out meaningful older backups.
+  if (forceBackup || Date.now() - lastBackupCopyAt >= BACKUP_COPY_MIN_INTERVAL_MS) {
+    lastBackupCopyAt = Date.now();
+    if (fs.existsSync(DB_FILE)) {
+      const stamp = new Date().toISOString()
+        .replace(/[-:]/g, '')
+        .replace('T', '-')
+        .replace('Z', '');
+      fs.copyFileSync(DB_FILE, path.join(BACKUP_DIR, `todo-${stamp}.db`));
+    }
   }
 
   const fd = fs.openSync(tempFile, 'w');
@@ -207,6 +216,7 @@ function updateCategory(id, name, icon) {
 }
 
 function deleteCategory(id) {
+  saveDB({ forceBackup: true });
   db.run('DELETE FROM todos WHERE category_id=?', [id]);
   db.run('DELETE FROM categories WHERE id=?', [id]);
   saveDB();
@@ -372,6 +382,7 @@ function touchTodoUpdatedAt(id) {
 }
 
 function deleteTodo(id) {
+  saveDB({ forceBackup: true });
   db.run('DELETE FROM todos WHERE id=?', [id]);
   saveDB();
   return true;
@@ -439,7 +450,7 @@ function migrateFromJSON(jsonFile, persist = true) {
     } catch (e) { /* ignore dup */ }
   }
 
-  if (persist) saveDB();
+  if (persist) saveDB({ forceBackup: true });
   return { status: 'migrated', todos: (data.todos || []).length, cats: (data.categories || []).length };
 }
 

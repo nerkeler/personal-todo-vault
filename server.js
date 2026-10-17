@@ -80,6 +80,7 @@ const MIME = {
 const PUBLIC_FILES = Object.freeze({
   '/': 'index.html',
   '/index.html': 'index.html',
+  '/app.js': 'app.js',
   '/USAGE.md': 'USAGE.md',
   '/sql-wasm.js': 'sql-wasm.js',
   '/sql-wasm.wasm': 'sql-wasm.wasm',
@@ -185,6 +186,48 @@ function writeTextAtomic(filepath, content) {
   fs.renameSync(tempFile, filepath);
 }
 
+// ── 笔记版本时钟 ─────────────────────────────────────────
+// notes/.meta.json 记录每份笔记的写入时间（ISO）。云端合并时用
+// 这个显式时钟做冲突裁决，避免依赖会被备份、恢复、拷贝破坏的
+// 文件系统 mtime。时钟缺失或无效时回退到旧的 mtime 比较。
+function noteMetaFileFor(directory = NOTES_DIR) {
+  return path.join(directory, '.meta.json');
+}
+
+function readNoteMeta(directory = NOTES_DIR) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(noteMetaFileFor(directory), 'utf8'));
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeNoteMeta(meta, directory = NOTES_DIR) {
+  try {
+    if (!fs.existsSync(directory)) return;
+    writeTextAtomic(noteMetaFileFor(directory), JSON.stringify(meta, null, 2) + '\n');
+  } catch (e) {
+    console.error('[NOTE] meta update failed:', e.message);
+  }
+}
+
+function bumpNoteMeta(noteFile) {
+  if (typeof noteFile !== 'string' || !noteFile.endsWith('.md')) return;
+  const meta = readNoteMeta();
+  meta[noteFile] = new Date().toISOString();
+  writeNoteMeta(meta);
+}
+
+function forgetNoteMeta(names) {
+  const meta = readNoteMeta();
+  let changed = false;
+  for (const name of names) {
+    if (Object.hasOwn(meta, name)) { delete meta[name]; changed = true; }
+  }
+  if (changed) writeNoteMeta(meta);
+}
+
 function ensureNoteFile(todo) {
   if (!fs.existsSync(NOTES_DIR)) fs.mkdirSync(NOTES_DIR, { recursive: true });
   const noteFile = noteFileFor(todo);
@@ -200,6 +243,7 @@ function ensureNoteFile(todo) {
     } else {
       writeTextAtomic(filepath, `# ${todo.title}\n`);
     }
+    bumpNoteMeta(noteFile);
     updateTodo(todo.id, { noteFile }, { touchUpdatedAt: false });
   }
   return { noteFile, filepath };
@@ -483,14 +527,18 @@ function removeTodoNote(todo) {
       .map(other => other.noteFile)
       .filter(Boolean)
   );
+  const removedNames = [];
   for (const filepath of new Set(candidates)) {
     const filename = path.basename(filepath);
     // 旧版按标题命名的文件可能被多个任务共用，只有不再被引用时才删除。
     if (filename !== noteFileFor(todo) && otherNoteFiles.has(filename)) continue;
-    try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch (e) {
+    try {
+      if (fs.existsSync(filepath)) { fs.unlinkSync(filepath); removedNames.push(filename); }
+    } catch (e) {
       console.error('[NOTE] Cleanup failed:', e.message);
     }
   }
+  forgetNoteMeta([noteFileFor(todo), ...removedNames]);
 }
 
 function hasCategory(id) {
@@ -588,6 +636,15 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'same-origin');
   if (req.headers?.origin) res.setHeader('Vary', 'Origin');
+  if (isApiPath && !appReady && readyPromise) {
+    try {
+      await readyPromise;
+    } catch (_) {
+      jsonResR({ error: '服务尚未就绪' }, 503);
+      return;
+    }
+    if (res.writableEnded) return;
+  }
   if (isApiPath && !isSameOriginRequest(req)) {
     jsonRes(res, { error: '仅允许同源请求' }, 403);
     return;
@@ -913,8 +970,9 @@ const server = http.createServer(async (req, res) => {
           if (updates.reminderMode !== undefined) kw.reminderMode = updates.reminderMode;
           if (updates.reminderWeekdays !== undefined) kw.reminderWeekdays = normalizeReminderWeekdays(updates.reminderWeekdays);
           if (updates.reminderRepeatCount !== undefined) kw.reminderRepeatCount = updates.reminderRepeatCount;
-          if (updates.reminderSentCount !== undefined) kw.reminderSentCount = Math.max(0, Number(updates.reminderSentCount) || 0);
-          if (updates.reminderLastSentAt !== undefined) kw.reminderLastSentAt = cleanString(updates.reminderLastSentAt, 80);
+          if (updates.reminderSentCount !== undefined || updates.reminderLastSentAt !== undefined) {
+            jsonResR({ error: 'reminderSentCount 与 reminderLastSentAt 是服务端记账字段，不可直接修改' }, 400); return;
+          }
           if (updates.creatorEmail !== undefined) kw.creatorEmail = updates.creatorEmail.trim();
           const effectiveMode = kw.reminderMode !== undefined ? kw.reminderMode : (currentTodo.reminderMode || 'once');
           const effectiveWeekdays = kw.reminderWeekdays !== undefined ? kw.reminderWeekdays : (currentTodo.reminderWeekdays || []);
@@ -985,6 +1043,7 @@ const server = http.createServer(async (req, res) => {
         try {
           const { noteFile, filepath } = ensureNoteFile(currentTodo || todo);
           writeTextAtomic(filepath, content);
+          bumpNoteMeta(noteFile);
           if ((currentTodo || todo).noteFile !== noteFile) updateTodo(id, { noteFile });
           const updated = touchTodoUpdatedAt(id);
           jsonResR({ ...(updated || {}), id, noteFile, success: true });
@@ -1240,8 +1299,18 @@ async function restoreBackupToCurrentData(snapshot = 'latest') {
     closeDB();
     databaseClosed = true;
     copyRestoreSafetyFiles(safetyDir);
+    const previousNoteMeta = readNoteMeta();
     replaceRestoredData(stageDir);
     await initDB();
+    // 云端清单 v3 附带每份笔记的版本时钟；v2 旧快照缺失时回用恢复前的
+    // 本地时钟，两者都缺失则后续合并回退到 mtime 比较。
+    const rebuiltNoteMeta = {};
+    for (const note of restored.noteDescriptors || []) {
+      if (note?.name?.endsWith('.md')) {
+        rebuiltNoteMeta[note.name] = note.updatedAt || previousNoteMeta[note.name] || null;
+      }
+    }
+    writeFilteredNoteMeta(rebuiltNoteMeta);
 
     const config = getFullConfig();
     if (config.email.enabled && isEmailConfigured(config.email)) startCron();
@@ -1433,11 +1502,27 @@ function copySyncNote(source, target) {
   try { fs.chmodSync(target, 0o600); } catch (_) {}
 }
 
+function mergeNoteVersionTime(value) {
+  if (typeof value !== 'string') return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function writeFilteredNoteMeta(meta, directory = NOTES_DIR) {
+  const clean = {};
+  for (const [name, value] of Object.entries(meta || {})) {
+    if (name.endsWith('.md') && typeof value === 'string') clean[name] = value;
+  }
+  writeNoteMeta(clean, directory);
+}
+
 function mergeSyncNotes(remoteDir, remoteDescriptors, mergedDir) {
   fs.mkdirSync(mergedDir, { recursive: true, mode: 0o700 });
   const localNames = new Set(noteFilesIn(NOTES_DIR));
   const remoteNames = new Set(noteFilesIn(remoteDir));
   const remoteMeta = new Map((remoteDescriptors || []).map(note => [note.name, note]));
+  const localMeta = readNoteMeta();
+  const mergedMeta = {};
   let localOnlyNotes = 0;
   let cloudOnlyNotes = 0;
   let conflictingNotes = 0;
@@ -1447,6 +1532,7 @@ function mergeSyncNotes(remoteDir, remoteDescriptors, mergedDir) {
     const target = path.join(mergedDir, name);
     if (!remoteNames.has(name)) localOnlyNotes += 1;
     copySyncNote(source, target);
+    mergedMeta[name] = Object.hasOwn(localMeta, name) ? localMeta[name] : null;
   }
   for (const name of remoteNames) {
     const source = path.join(remoteDir, name);
@@ -1454,17 +1540,33 @@ function mergeSyncNotes(remoteDir, remoteDescriptors, mergedDir) {
     if (!localNames.has(name)) {
       cloudOnlyNotes += 1;
       copySyncNote(source, target);
+      mergedMeta[name] = remoteMeta.get(name)?.updatedAt || null;
       continue;
     }
     const localSource = path.join(NOTES_DIR, name);
     const localContent = fs.readFileSync(localSource);
     const remoteContent = fs.readFileSync(source);
+    mergedMeta[name] = Object.hasOwn(localMeta, name) ? localMeta[name] : null;
     if (sha256(localContent) === sha256(remoteContent)) continue;
     conflictingNotes += 1;
-    const localMtime = fs.statSync(localSource).mtimeMs;
-    const remoteMtime = Number(remoteMeta.get(name)?.mtimeMs) || 0;
-    if (remoteMtime > localMtime) copySyncNote(source, target);
+    let remoteNewer = false;
+    const localVersion = mergeNoteVersionTime(localMeta[name]);
+    const remoteVersion = mergeNoteVersionTime(remoteMeta.get(name)?.updatedAt);
+    if (localVersion !== null && remoteVersion !== null && localVersion !== remoteVersion) {
+      // 双方都有可解析的版本时钟时优先用它；mtime 会被备份/恢复/拷贝破坏。
+      remoteNewer = remoteVersion > localVersion;
+    } else {
+      // 版本时钟缺失（旧版快照或外部编辑过的笔记）回退到本地 mtime 比较。
+      const localMtime = fs.statSync(localSource).mtimeMs;
+      const remoteMtime = Number(remoteMeta.get(name)?.mtimeMs) || 0;
+      remoteNewer = remoteMtime > localMtime;
+    }
+    if (remoteNewer) {
+      copySyncNote(source, target);
+      mergedMeta[name] = remoteMeta.get(name)?.updatedAt || null;
+    }
   }
+  writeFilteredNoteMeta(mergedMeta, mergedDir);
   return { localOnlyNotes, cloudOnlyNotes, conflictingNotes };
 }
 
@@ -1580,6 +1682,9 @@ async function syncBackupToCurrentData() {
 }
 
 // ── 启动 ─────────────────────────────────────────────────
+let appReady = false;
+let readyPromise = null;
+
 async function bootstrap() {
   try {
     await initDB();
@@ -1590,13 +1695,14 @@ async function bootstrap() {
     console.log(`[TODO] SMTP: ${smtpReady}, emailEnabled: ${appConfig.email.enabled}`);
     if (appConfig.email.enabled && smtpReady) startCron();
     startBackupTimer();
+    appReady = true;
   } catch (e) {
     console.error('[TODO] Bootstrap error:', e.message);
     process.exit(1);
   }
 }
 
-bootstrap();
+readyPromise = bootstrap();
 server.listen(PORT, HOST, () => console.log(`TODO App → http://${HOST}:${PORT}`));
 
 process.on('SIGTERM', () => { stopBackupTimer(); closeDB(); process.exit(0); });

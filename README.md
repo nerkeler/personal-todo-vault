@@ -216,7 +216,8 @@ TODO_DATA_DIR=/data npm run migrate
 
 ```text
 personal-todo-vault/
-├── index.html              # 页面、样式与交互
+├── index.html              # 页面、样式与布局
+├── app.js                  # 前端交互逻辑
 ├── server.js               # HTTP API、提醒和备份调度
 ├── sqlite.js               # SQLite 初始化与原子保存
 ├── appConfig.js            # 本地配置加密与脱敏输出

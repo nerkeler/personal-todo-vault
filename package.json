@@ -14,7 +14,7 @@
     "migrate:snapshots": "node migrate-snapshots.js",
     "restore": "node restore.js",
     "test:release": "node test/release-regression.cjs",
-    "check": "node --check server.js"
+    "check": "node --check server.js && node --check app.js"
   },
   "engines": {
     "node": ">=22"
