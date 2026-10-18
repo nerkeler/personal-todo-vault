@@ -14,7 +14,7 @@
 Personal Todo Vault 是一个面向个人与家庭服务器的自托管待办应用。它把待办清单、完成进度、预期完成时间、邮件提醒和 Markdown 笔记放在同一个界面里，运行数据保存为本机 SQLite 数据库和 Markdown 文件；需要异地备份时，可选择坚果云 WebDAV。
 
 > [!WARNING]
-> 应用目前没有登录、权限管理或多用户隔离。请只部署在本机、可信局域网、VPN，或带身份验证的 HTTPS 反向代理后面；不要直接把 8238 端口暴露到公网。
+> 应用没有多用户隔离；所有访问者共享同一份数据。可在配置中心开启单用户访问密码（🔐 访问控制），但即便如此也请只部署在本机、可信局域网、VPN，或带身份验证的 HTTPS 反向代理后面；不要直接把 8238 端口暴露到公网。
 
 ![Personal Todo Vault 列表视图](docs/screenshots/dashboard.png)
 
@@ -196,6 +196,9 @@ TODO_DATA_DIR=/data npm run migrate
 ## 网络与安全
 
 - 默认监听本机地址；Docker 为了容器端口映射监听 `0.0.0.0`。
+- 配置中心「访问控制」可为应用设置单用户访问密码：密码经 scrypt 哈希后保存在服务端，登录会话由 HMAC 签名的 HttpOnly Cookie 承载；修改密码会使所有已登录设备立即失效，登录接口自带按来源限流（连续 5 次失败锁定 10 分钟）。
+- 服务端管理员可用 `npm run auth:manage -- status|set|change|disable|kick` 在命令行管理访问保护；忘记密码时以 `set` 直接重置（无需旧密码）。Docker 部署同样支持：`docker compose exec -e TODO_AUTH_NEW_PASSWORD=新密码 todo-app node manageAuth.js set --yes`，完整命令见 USAGE.md 第 9 节。
+- 也可用环境变量 `TODO_AUTH_PASSWORD` 首次启动即开启保护；HTTPS 反向代理场景请同时设置 `TODO_AUTH_SECURE_COOKIES=true`。
 - 反向代理部署时，用 `TODO_ALLOWED_ORIGINS` 指定精确的 HTTPS Origin，多个来源用英文逗号分隔。
 - 不要使用 `*`，也不要依赖未经信任的 `X-Forwarded-Proto` 判断来源。
 - 不要提交 `todo.db`、`notes/`、`backups/`、`config.local.*`、`.env` 或任何应用密码。
@@ -223,6 +226,7 @@ personal-todo-vault/
 ├── appConfig.js            # 本地配置加密与脱敏输出
 ├── cloudBackup.js          # WebDAV 增量备份、同步与恢复
 ├── email.js                # SMTP 邮件
+├── auth.js                 # 访问保护：scrypt 密码与签名会话
 ├── restore.js              # 隔离恢复工具
 ├── migrate*.js             # 数据和快照迁移
 ├── test/                   # 发布回归测试

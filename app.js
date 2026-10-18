@@ -66,10 +66,13 @@
     renderViewSwitcher();
     renderAddPriorityLabel();
     resetAddDueDate();
-    loadData();
+    initAuthGate().then(() => { if (!authGateState.overlayShown) loadData(); });
     initIconGrid();
     document.getElementById('todoInput').addEventListener('keypress', e => {
       if (e.key === 'Enter') addTodo();
+    });
+    document.getElementById('authPasswordInput').addEventListener('keypress', e => {
+      if (e.key === 'Enter') authLogin();
     });
     document.getElementById('catNameInput').addEventListener('keypress', e => {
       if (e.key === 'Enter') saveCatModal();
@@ -91,6 +94,218 @@
       if (!e.target.closest('.due-picker-time-menu') && !e.target.closest('.due-picker-time-select')) closeAddDueTimeMenu();
     });
   });
+
+  /* ── Auth gate：访问保护 ── */
+  const authGateState = { enabled: false, authed: false, overlayShown: false };
+  const authGuardInstalled = { value: false };
+
+  function installAuthFetchGuard() {
+    if (authGuardInstalled.value) return;
+    authGuardInstalled.value = true;
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async function (input, init) {
+      const res = await originalFetch(input, init);
+      if (res.status === 401 && authGateState.enabled && !authGateState.overlayShown) {
+        authGateState.authed = false;
+        authGateState.overlayShown = true;
+        showModal('authGate');
+        showToast('登录状态已失效，请重新解锁');
+        document.getElementById('authPasswordInput')?.focus();
+      }
+      return res;
+    };
+  }
+
+  async function initAuthGate() {
+    try {
+      const res = await fetch(API + '/auth/status?_=' + Date.now());
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '访问状态读取失败');
+      authGateState.enabled = !!data.enabled;
+      authGateState.authed = !!data.authed;
+    } catch (e) {
+      console.error('[AUTH] status check failed:', e);
+      return;
+    }
+    if (authGateState.enabled) {
+      installAuthFetchGuard();
+      if (!authGateState.authed) {
+        authGateState.overlayShown = true;
+        showModal('authGate');
+        document.getElementById('authPasswordInput')?.focus();
+      }
+    }
+  }
+
+  function showAuthGateError(message, shake = true) {
+    const errorEl = document.getElementById('authGateError');
+    const input = document.getElementById('authPasswordInput');
+    if (errorEl) {
+      errorEl.textContent = message || '';
+      if (message && shake) {
+        errorEl.classList.remove('shake-text');
+        void errorEl.offsetWidth;
+        errorEl.classList.add('shake-text');
+      }
+    }
+    if (shake && input) {
+      input.classList.add('shake');
+      setTimeout(() => input.classList.remove('shake'), 350);
+    }
+  }
+
+  async function authLogin() {
+    const input = document.getElementById('authPasswordInput');
+    const remember = !!document.getElementById('authRememberToggle')?.checked;
+    const password = input.value;
+    if (!password) {
+      showAuthGateError('请输入访问密码');
+      return;
+    }
+    setButtonBusy('authLoginBtn', true, '解锁中…');
+    document.getElementById('authGateError').textContent = '';
+    try {
+      const res = await fetch(API + '/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password, remember }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        input.value = '';
+        showAuthGateError(data.error || (data.retryAfterMs ? '尝试过于频繁，请稍后重试' : '密码错误'));
+        return;
+      }
+      input.value = '';
+      authGateState.authed = true;
+      authGateState.overlayShown = false;
+      hideModal('authGate');
+      showToast('✅ 已解锁');
+      document.getElementById('authGateError').textContent = '';
+      loadData();
+    } catch (e) {
+      showAuthGateError(e.message || '网络错误，请重试', false);
+    } finally {
+      setButtonBusy('authLoginBtn', false);
+    }
+  }
+
+  async function refreshAuthStatus() {
+    const res = await fetch(API + '/auth/status?_=' + Date.now());
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '读取访问控制状态失败');
+    return data;
+  }
+
+  async function populateAuthForm() {
+    try {
+      const status = await refreshAuthStatus();
+      authGateState.enabled = !!status.enabled;
+      authGateState.authed = !!status.authed;
+      setBadge('authStatusBadge', status.enabled, '🔒 密码已启用', '🔓 未启用');
+      document.getElementById('authDisabledControls').hidden = !!status.enabled;
+      document.getElementById('authEnabledControls').hidden = !status.enabled;
+      for (const id of ['authNewPasswordInput', 'authConfirmPasswordInput', 'authCurrentPasswordInput', 'authNewPassword2Input', 'authNewPasswordConfirmInput']) {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      }
+      setResult('authEnableResult', '');
+      setResult('authManageResult', '');
+    } catch (e) {
+      setResult('authEnableResult', `读取状态失败：${e.message}`, 'error');
+    }
+  }
+
+  async function enableAuthFromSettings() {
+    const newPassword = document.getElementById('authNewPasswordInput').value;
+    const confirm = document.getElementById('authConfirmPasswordInput').value;
+    if (newPassword.length < 6) { setResult('authEnableResult', '❌ 访问密码至少 6 个字符', 'error'); return; }
+    if (newPassword !== confirm) { setResult('authEnableResult', '❌ 两次输入的密码不一致', 'error'); return; }
+    setButtonBusy('authEnableBtn', true, '启用中…');
+    try {
+      const res = await fetch(API + '/auth/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: '', newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '启用失败');
+      showToast('🔒 密码保护已启用');
+      await populateAuthForm();
+    } catch (e) {
+      setResult('authEnableResult', `❌ ${e.message}`, 'error');
+    } finally {
+      setButtonBusy('authEnableBtn', false);
+    }
+  }
+
+  async function changeAuthPasswordFromSettings() {
+    const current = document.getElementById('authCurrentPasswordInput').value;
+    const next = document.getElementById('authNewPassword2Input').value;
+    const confirm = document.getElementById('authNewPasswordConfirmInput').value;
+    if (!current) { setResult('authManageResult', '❌ 请输入当前密码', 'error'); return; }
+    if (next.length < 6) { setResult('authManageResult', '❌ 新密码至少 6 个字符', 'error'); return; }
+    if (next !== confirm) { setResult('authManageResult', '❌ 两次输入的新密码不一致', 'error'); return; }
+    setButtonBusy('authChangeBtn', true, '修改中…');
+    try {
+      const res = await fetch(API + '/auth/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '修改失败');
+      showToast('✅ 密码已更新，所有设备需重新登录');
+      await populateAuthForm();
+    } catch (e) {
+      setResult('authManageResult', `❌ ${e.message}`, 'error');
+    } finally {
+      setButtonBusy('authChangeBtn', false);
+    }
+  }
+
+  async function disableAuthFromSettings() {
+    const current = document.getElementById('authCurrentPasswordInput').value;
+    if (!current) { setResult('authManageResult', '❌ 请输入当前密码以确认关闭保护', 'error'); return; }
+    setButtonBusy('authDisableBtn', true, '操作中…');
+    try {
+      const res = await fetch(API + '/auth/disable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: current }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '关闭失败');
+      authGateState.enabled = false;
+      showToast('🔓 密码保护已关闭');
+      await populateAuthForm();
+    } catch (e) {
+      setResult('authManageResult', `❌ ${e.message}`, 'error');
+    } finally {
+      setButtonBusy('authDisableBtn', false);
+    }
+  }
+
+  async function logoutFromSettings() {
+    setButtonBusy('authLogoutBtn', true, '退出中…');
+    try {
+      const res = await fetch(API + '/auth/logout', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '退出失败');
+      closeSettingsModal();
+      if (authGateState.enabled) {
+        authGateState.authed = false;
+        authGateState.overlayShown = true;
+        showModal('authGate');
+        document.getElementById('authPasswordInput')?.focus();
+      }
+      showToast('已退出登录');
+    } catch (e) {
+      setResult('authManageResult', `❌ ${e.message}`, 'error');
+    } finally {
+      setButtonBusy('authLogoutBtn', false);
+    }
+  }
 
   function prefersReducedMotion() {
     return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -909,6 +1124,7 @@
     resetSettingsDisclosure();
     showModal('settingsModal', source || document.getElementById('settingsBtn'));
     populateSettingsForm();
+    populateAuthForm();
     setResult('settingsSaveResult', '正在读取配置…');
     try {
       await refreshSettings();

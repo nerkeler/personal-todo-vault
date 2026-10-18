@@ -8,6 +8,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const zlib = require('node:zlib');
 const { Readable } = require('node:stream');
+const { spawnSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const TEMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'todo-release-regression-'));
@@ -328,6 +329,122 @@ async function testServer() {
   assert.equal(db.getTodos().find(todo => todo.id === concurrentId).reminderSentCount, 1);
 
   await testNoteMergeClock(harness);
+  await testAuth(harness);
+}
+
+async function testAuth(harness) {
+  let res = await request(harness, 'GET', '/api/auth/status');
+  assert.equal(res.body.enabled, false, '未配置密码时保护默认关闭');
+  assert.equal((await request(harness, 'GET', '/api/todos')).status, 200, '默认关闭时 API 照常可达');
+
+  res = await request(harness, 'PUT', '/api/auth/password', { currentPassword: '', newPassword: 'right-pass-1' });
+  assert.equal(res.status, 200, '关闭状态下可直接设置访问密码');
+  const cookie = res.headers['Set-Cookie'];
+  assert(cookie && cookie.includes('todo_session=') && cookie.includes('HttpOnly') && cookie.includes('SameSite=Lax'), '登录应下发 HttpOnly 同站 cookie');
+
+  assert.equal((await request(harness, 'GET', '/api/todos')).status, 401, '启用后未携带会话应被拒绝');
+  assert.equal((await request(harness, 'GET', '/')).status, 200, '页面外壳保持可访问以便呈现登录遮罩');
+  assert.equal((await request(harness, 'GET', '/api/todos', undefined, { cookie })).status, 200);
+  assert.equal((await request(harness, 'GET', '/api/auth/status', undefined, { cookie })).body.authed, true);
+  assert.equal((await request(harness, 'GET', '/api/auth/status')).body.authed, false, 'status 不得声称未登录者已登录');
+
+  const wrong = await request(harness, 'POST', '/api/auth/login', { password: 'wrong-wrong' });
+  assert.equal(wrong.status, 401, '密码错误应被拒绝');
+  assert((await request(harness, 'GET', '/api/todos', undefined, { cookie })).status, 200);
+  assert.equal((await request(harness, 'GET', '/api/todos', undefined, { cookie })).status, 200, '被拒登录取不影响既有会话');
+
+  for (let i = 0; i < 4; i++) {
+    assert.equal((await request(harness, 'POST', '/api/auth/login', { password: 'wrong-wrong' })).status, 401);
+  }
+  const locked = await request(harness, 'POST', '/api/auth/login', { password: 'wrong-wrong' });
+  assert.equal(locked.status, 429, '连续 5 次失败后应限流锁定');
+  assert(Number.isSafeInteger(locked.body.retryAfterMs), '限流响应应包含 retryAfterMs');
+  const blocked = await request(harness, 'POST', '/api/auth/login', { password: 'next-pass-2' });
+  assert.equal(blocked.status, 429, '限流期间正确密码也不应通过');
+  vm.runInContext('auth.clearRateLimits()', harness.context);
+
+  const changed = await request(harness, 'PUT', '/api/auth/password', {
+    currentPassword: 'right-pass-1', newPassword: 'next-pass-2',
+  }, { cookie });
+  assert.equal(changed.status, 200);
+  assert.equal((await request(harness, 'GET', '/api/todos', undefined, { cookie })).status, 401, '改密后旧会话应全部失效');
+  const cookie2 = changed.headers['Set-Cookie'];
+  assert.equal((await request(harness, 'GET', '/api/todos', undefined, { cookie: cookie2 })).status, 200, '改密后应重新颁发有效会话');
+
+  const rejected = await request(harness, 'PUT', '/api/auth/password', {
+    currentPassword: 'nope-nope-nope', newPassword: 'another-9',
+  }, { cookie: cookie2 });
+  assert.equal(rejected.status, 400, '错误的当前密码应被拒绝');
+  assert.equal((await request(harness, 'GET', '/api/todos', undefined, { cookie: cookie2 })).status, 200, '失败的改密不得影响现有会话');
+
+  const offDenied = await request(harness, 'POST', '/api/auth/disable', { currentPassword: 'wrong-wrong' }, { cookie: cookie2 });
+  assert.equal(offDenied.status, 400, '错误密码不得关闭保护');
+
+  const off = await request(harness, 'POST', '/api/auth/disable', { currentPassword: 'next-pass-2' }, { cookie: cookie2 });
+  assert.equal(off.status, 200);
+  assert.equal((await request(harness, 'GET', '/api/auth/status')).body.enabled, false, '关闭后 status 应恢复关闭态');
+  assert.equal((await request(harness, 'GET', '/api/todos')).status, 200, '关闭后所有 API 立即恢复匿名可用');
+
+  await testAuthCli();
+}
+
+function runAuthCli(args, extraEnv = {}) {
+  const child = spawnSync(process.execPath, [path.join(ROOT, 'manageAuth.js'), ...args], {
+    cwd: ROOT,
+    env: { ...process.env, ...extraEnv },
+    encoding: 'utf8',
+  });
+  return { status: child.status, stdout: child.stdout || '', stderr: child.stderr || '' };
+}
+
+function testAuthCli() {
+  // CLI 使用独立配置目录，不触碰回归服务器实例的 auth 状态
+  const cliDir = path.join(TEMP_ROOT, 'auth-cli-config');
+  fs.mkdirSync(cliDir, { recursive: true });
+  const nopeHelp = runAuthCli(['--help'], { TODO_CONFIG_DIR: cliDir });
+  assert(nopeHelp.stdout.includes('auth:manage'), 'help 应包含命令说明');
+  const unknown = runAuthCli(['nonsense'], { TODO_CONFIG_DIR: cliDir });
+  assert.equal(unknown.status, 1, '未知命令应失败');
+
+  const base = { TODO_CONFIG_DIR: cliDir };
+  const before = runAuthCli(['status', '--json'], base);
+  assert.equal(JSON.parse(before.stdout).enabled, false, 'CLI status 应与实际状态一致');
+
+  const set = runAuthCli(['set', '--yes'], {
+    ...base,
+    TODO_AUTH_NEW_PASSWORD: 'cli-pass-env-1',
+  });
+  assert.equal(set.status, 0, `CLI set 应成功：${set.stderr}`);
+
+  const after = JSON.parse(runAuthCli(['status', '--json'], base).stdout);
+  assert.equal(after.enabled, true, 'CLI 设置后保护应处于启用状态');
+  assert(after.epoch >= 2, `epoch 应随启用推进（实际 ${after.epoch}）`);
+  assert(after.files.authFileExists && after.files.authKeyFileExists, 'CLI 应创建 auth 配置与会话密钥文件');
+
+  // 错误当前密码的 change 应失败且不改状态
+  const badChange = runAuthCli(['change'], {
+    ...base,
+    TODO_AUTH_CURRENT_PASSWORD: 'wrong-cli-pass',
+    TODO_AUTH_NEW_PASSWORD: 'cli-pass-env-2',
+  });
+  assert.equal(badChange.status, 1, '当前密码错误时 change 应失败');
+  try {
+    assert.equal(JSON.parse(runAuthCli(['status', '--json'], base).stdout).epoch, after.epoch, '失败的 change 不得推进 epoch');
+  } catch (e) { assert.fail('change 失败后 status --json 应可解析'); }
+
+  // kick 需要 enabled；执行后 epoch 推进但保护保持启用
+  const kick = runAuthCli(['kick'], base);
+  assert.equal(kick.status, 0, `CLI kick 应成功：${kick.stderr}`);
+  const afterKick = JSON.parse(runAuthCli(['status', '--json'], base).stdout);
+  assert.equal(afterKick.enabled, true, 'kick 不应关闭保护');
+  assert(afterKick.epoch > after.epoch, 'kick 应推进 epoch');
+
+  // disable 需正确当前密码；错误密码应被拒绝
+  const badDisable = runAuthCli(['disable'], { ...base, TODO_AUTH_CURRENT_PASSWORD: 'wrong-cli-pass' });
+  assert.equal(badDisable.status, 1, '错误密码不得关闭保护');
+  const off = runAuthCli(['disable'], { ...base, TODO_AUTH_CURRENT_PASSWORD: 'cli-pass-env-1' });
+  assert.equal(off.status, 0, `CLI disable 应成功：${off.stderr}`);
+  assert.equal(JSON.parse(runAuthCli(['status', '--json'], base).stdout).enabled, false, 'CLI 关闭后 status 应为关闭态');
 }
 
 async function testNoteMergeClock(harness) {
@@ -817,6 +934,7 @@ async function testFrontend() {
         'due-date status labels and calendar fallback behavior',
         'reminder no-op/concurrency/stale-state protection',
         'client-writable reminder bookkeeping rejected',
+        'scrypt password auth with signed-cookie sessions, rate limiting, and epoch invalidation',
         'WebDAV response and gzip limits',
         '409 content verification and safe restore publish',
         'monthly snapshot paths, idempotent legacy migration, and v3 note clock',

@@ -13,8 +13,9 @@
     "migrate": "node migrate.js",
     "migrate:snapshots": "node migrate-snapshots.js",
     "restore": "node restore.js",
+    "auth:manage": "node manageAuth.js",
     "test:release": "node test/release-regression.cjs",
-    "check": "node --check server.js && node --check app.js"
+    "check": "node --check server.js && node --check app.js && node --check auth.js && node --check manageAuth.js"
   },
   "engines": {
     "node": ">=22"

@@ -75,6 +75,65 @@ TODO App 是一个将待办事项、进度提醒与 Markdown 上下文放在一�
 
 如果备份目录中已经有云端快照，保存后优先使用“与云端同步”；如果目录为空，同步会将当前本地数据创建为第一份快照。为防止新容器的空数据库覆盖已有云端数据，“立即备份”会在这种情况下主动阻止上传。
 
+### 8. 访问控制（登录）
+
+访问保护默认关闭。在配置中心「🔐 访问控制」中设置至少 6 个字符的访问密码后启用：
+
+- 启用后打开页面会出现解锁遮罩，API 与页面数据都需要先登录。
+- 勾选“30 天内记住这台设备”后本机浏览器在密码变更前的 30 天内免登录；不勾选则关闭浏览器即失效（最长 12 小时）。
+- 修改密码或关闭保护会使所有已登录设备的会话立即失效。
+- 退出登录只清除当前设备的登录状态，其它“记住设备”的浏览器不受影响。
+- 登录接口自带限流：同一来源连续 5 次输错密码会锁定 10 分钟。
+- 忘记密码：删除服务器 `config/config.auth.json`（及可选的 `config.auth.key`）后重启应用。
+
+### 9. 服务端管理员命令（auth:manage）
+
+管理员可以在服务器上直接管理访问保护，适用于忘记密码、批量部署和无法进入界面的场景。
+
+**本机 / 直接运行部署**：
+
+```bash
+npm run auth:manage -- status      # 查询保护状态（--json 可输出 JSON）
+npm run auth:manage -- set         # 首次启用 / 重置密码（交互输入，不回显）
+npm run auth:manage -- change      # 修改密码（已启用时需先输入当前密码）
+npm run auth:manage -- disable     # 关闭密码保护（需输入当前密码）
+npm run auth:manage -- kick        # 不改密码，强制所有已登录设备重新登录
+```
+
+**Docker Compose 部署**（服务名以 docker-compose.yml 中的 `todo-app` 为准；配置目录挂载在 `/config`）：
+
+```bash
+docker compose exec todo-app node manageAuth.js status --json
+docker compose exec todo-app node manageAuth.js set             # 交互输入不回显
+docker compose exec todo-app node manageAuth.js change
+docker compose exec todo-app node manageAuth.js disable
+docker compose exec todo-app node manageAuth.js kick
+```
+
+非交互终端（如某些远端 SSH、CI）无法交互输入时，用环境变量完成同样操作：
+
+```bash
+# 首次启用 / 忘记密码时重置
+docker compose exec -e TODO_AUTH_NEW_PASSWORD='你的新密码' todo-app node manageAuth.js set --yes
+# 修改密码
+docker compose exec -e TODO_AUTH_CURRENT_PASSWORD='当前密码' -e TODO_AUTH_NEW_PASSWORD='新密码' todo-app node manageAuth.js change --yes
+# 关闭保护
+docker compose exec -e TODO_AUTH_CURRENT_PASSWORD='当前密码' todo-app node manageAuth.js disable --yes
+# 强制全部设备重新登录
+docker compose exec todo-app node manageAuth.js kick
+```
+
+**单条 docker run 部署**：容器内同路径命令可用 `docker exec -it personal-todo-vault node manageAuth.js ...` 执行，配置目录正确挂载（`-v $PWD/config:/config`）后状态即持久化。
+
+选项与环境变量：
+
+- `--yes`：跳过覆盖式操作的确认提示（脚本化场景必需）。
+- `--json`：`status` 输出 JSON，便于巡检脚本解析。
+- `TODO_AUTH_NEW_PASSWORD`：脚本化提供目标密码（优先于交互输入）。
+- `TODO_AUTH_CURRENT_PASSWORD`：脚本化提供当前密码（优先于交互输入）。
+
+安全说明：管理命令不需要应用会话（管理员直接持有服务器权限），但为了保护密码安全，本工具**不接受命令行参数形式的密码**（避免出现在进程列表和 shell 历史中）；交互输入全程不回显，环境变量方式请酌情评估 CI/日志的可见性。`set` 覆盖已有密码、`kick` 与 `disable` 都会使所有已登录设备立即退出。若需要彻底重来，也可以删除宿主机 `./config/config.auth.json` 与 `config.auth.key` 后重启容器。
+
 ## 状态规则
 
 | 状态 | 任务名称 | 进度 | 提醒 | Markdown |

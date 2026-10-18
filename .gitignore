@@ -16,6 +16,9 @@ notes/*
 # Encrypted local configuration and its machine-local encryption key
 config.local.json
 config.local.key
+# Access protection credentials and the HMAC session key
+config.auth.json
+config.auth.key
 
 # Optional developer environment overrides
 .env

@@ -61,6 +61,7 @@ const { initDB, closeDB, saveDB,
   getTodos, createTodo, updateTodo, touchTodoUpdatedAt, deleteTodo,
   getSettings, saveSettings, migrateFromJSON } = require('./sqlite.js');
 const { sendEmail, sendTestEmail } = require('./email.js');
+const auth = require('./auth.js');
 const { getFullConfig, saveAppConfig, publicAppConfig, isEmailConfigured, migrateStoredConfigSecrets } = require('./appConfig.js');
 const { getBackupConfig, publicBackupStatus, inspectRemoteBackup, testBackupConfig, uploadBackup, restoreBackup } = require('./cloudBackup.js');
 
@@ -686,6 +687,75 @@ const server = http.createServer(async (req, res) => {
       }
     });
   };
+
+  // ── 登录门控 ──────────────────────────────────────────
+  // /api/auth/status 与 /api/auth/login 始终放行，以便前端探测并发起登录；
+  // 其余 /api 在已启用访问保护时要求有效会话 cookie。静态页面本身不含数据，
+  // 保持可访问，由前端登录遮罩接管未登录状态。
+  if (isApiPath && ![
+    '/api/auth/status',
+    '/api/auth/login',
+    '/api/auth/logout',
+  ].includes(pathname) && auth.enabled() && !auth.isRequestAuthenticated(req)) {
+    jsonResR({ error: '未登录或会话已过期' }, 401);
+    return;
+  }
+
+  // ── Auth access control ────────────────────────────────
+  if (pathname === '/api/auth/status' && req.method === 'GET') {
+    jsonResR(auth.publicStatus(req));
+    return;
+  }
+
+  if (pathname === '/api/auth/login' && req.method === 'POST') {
+    withBody(async ({ password, remember }) => {
+      const ip = req.socket?.remoteAddress || 'unknown';
+      const attempt = auth.expectLoginAttempt(ip);
+      if (!attempt.ok) {
+        jsonResR({ error: `登录尝试过于频繁，请 ${Math.ceil(attempt.retryAfterMs / 1000)} 秒后重试`, retryAfterMs: attempt.retryAfterMs }, 429);
+        return;
+      }
+      try {
+        const result = auth.login(password, remember === true, { secure: auth.secureCookieFlag(req) });
+        auth.noteLoginResult(ip, result.ok);
+        if (!result.ok) { jsonResR({ error: result.error || '密码错误' }, 401); return; }
+        res.setHeader('Set-Cookie', result.cookie);
+        jsonResR({ success: true, authed: true });
+      } catch (e) { jsonResR({ error: e.message }, 400); }
+    });
+    return;
+  }
+
+  if (pathname === '/api/auth/logout' && req.method === 'POST') {
+    res.setHeader('Set-Cookie', auth.clearCookieHeader(auth.secureCookieFlag(req)));
+    jsonResR({ success: true, enabled: auth.enabled() });
+    return;
+  }
+
+  if (pathname === '/api/auth/password' && req.method === 'PUT') {
+    withBody(async ({ currentPassword, newPassword }) => {
+      try {
+        const result = typeof currentPassword === 'string' || typeof newPassword === 'string'
+          ? auth.changePassword(currentPassword, newPassword, { secure: auth.secureCookieFlag(req) })
+          : null;
+        if (!result) { jsonResR({ error: '至少提供 currentPassword 或 newPassword' }, 400); return; }
+        res.setHeader('Set-Cookie', result.cookie);
+        jsonResR({ success: true, enabled: result.enabled });
+      } catch (e) { jsonResR({ error: e.message }, 400); }
+    });
+    return;
+  }
+
+  if (pathname === '/api/auth/disable' && req.method === 'POST') {
+    withBody(async ({ currentPassword }) => {
+      try {
+        const result = auth.disable(currentPassword);
+        res.setHeader('Set-Cookie', auth.clearCookieHeader(auth.secureCookieFlag(req)));
+        jsonResR(result);
+      } catch (e) { jsonResR({ error: e.message }, 400); }
+    });
+    return;
+  }
 
   // ── GET /api/settings ─────────────────────────────────
   if (pathname === '/api/settings' && req.method === 'GET') {
@@ -1689,6 +1759,7 @@ async function bootstrap() {
   try {
     await initDB();
     console.log('[TODO] SQLite ready:', DB_FILE);
+    auth.bootstrapFromEnv();
     migrateStoredConfigSecrets();
     const appConfig = getFullConfig();
     const smtpReady = isEmailConfigured(appConfig.email);

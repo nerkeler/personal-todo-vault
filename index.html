@@ -1689,6 +1689,133 @@
     .toast[hidden] { display: none; }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+    /* ── Auth gate（登录遮罩）── */
+    .auth-gate-overlay {
+      z-index: 550;
+      background: color-mix(in srgb, var(--bg) 45%, rgba(8, 10, 14, 0.5));
+      -webkit-backdrop-filter: blur(16px) saturate(1.2);
+      backdrop-filter: blur(16px) saturate(1.2);
+    }
+    .auth-gate-modal {
+      width: min(92vw, 380px);
+      padding: 36px 32px 30px;
+      border-radius: 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .auth-gate-brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .auth-gate-logo {
+      width: 40px;
+      height: 40px;
+      display: block;
+      filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent));
+    }
+    .auth-gate-app-name {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--text-2);
+      letter-spacing: 0.01em;
+    }
+    .auth-gate-title {
+      font-size: 1.26rem;
+      font-weight: 700;
+      color: var(--text);
+      text-align: center;
+    }
+    .auth-gate-desc {
+      margin-top: 6px;
+      font-size: 0.84rem;
+      color: var(--text-2);
+      line-height: 1.55;
+      text-align: center;
+    }
+    .auth-gate-field {
+      position: relative;
+      margin-top: 24px;
+    }
+    .auth-gate-lock {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.95rem;
+      opacity: 0.55;
+      pointer-events: none;
+      line-height: 1;
+    }
+    .auth-gate-input {
+      width: 100%;
+      padding: 12px 16px 12px 42px;
+      font: inherit;
+      font-size: 0.95rem;
+      letter-spacing: 0.14em;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .auth-gate-input::placeholder { letter-spacing: 0.02em; color: var(--text-3); }
+    .auth-gate-input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+    }
+    .auth-gate-remember {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 0.8rem;
+      color: var(--text-2);
+      cursor: pointer;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .auth-gate-remember input {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+    .auth-gate-error {
+      margin: 10px 0 0;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      color: var(--danger);
+      text-align: center;
+    }
+    .auth-gate-error:empty { display: none; }
+    .auth-gate-btn {
+      width: 100%;
+      margin-top: 14px;
+      padding: 12px 18px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border-radius: 10px;
+      transition: transform 0.15s ease, background 0.2s ease;
+    }
+    .auth-gate-btn:active { transform: scale(0.98); }
+    @media (max-width: 768px) {
+      .auth-gate-modal { padding: 30px 22px 24px; }
+      .auth-gate-brand { margin-bottom: 16px; }
+      .auth-gate-field { margin-top: 20px; }
+    }
+    @keyframes authShake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    .auth-gate-error.shake-text { animation: authShake 0.35s ease; }
+
     /* ── Modal ── */
     .modal-overlay {
       display: none;
@@ -2973,6 +3100,61 @@
       </div>
     </details>
 
+    <details class="settings-section settings-disclosure" id="authSettingsSection">
+      <summary class="settings-disclosure-summary">
+        <div class="settings-section-head">
+          <div>
+            <div class="settings-section-title">🔐 访问控制</div>
+            <div class="settings-section-desc">为本站设置访问密码。密码只保存在服务端，登录状态保留在本机浏览器中。</div>
+          </div>
+          <span class="settings-badge" id="authStatusBadge">读取中…</span>
+        </div>
+        <span class="settings-disclosure-chevron" aria-hidden="true"></span>
+      </summary>
+      <div class="settings-disclosure-body">
+        <div id="authDisabledControls">
+          <div class="settings-grid">
+            <label class="settings-field">
+              <span>设置访问密码</span>
+              <input class="modal-input" type="password" id="authNewPasswordInput" autocomplete="new-password" placeholder="至少 6 个字符">
+            </label>
+            <label class="settings-field">
+              <span>确认密码</span>
+              <input class="modal-input" type="password" id="authConfirmPasswordInput" autocomplete="new-password" placeholder="再次输入以确认">
+            </label>
+          </div>
+          <div class="settings-actions-inline">
+            <button class="modal-btn primary" id="authEnableBtn" onclick="enableAuthFromSettings()">启用密码保护</button>
+            <span class="settings-result" id="authEnableResult"></span>
+          </div>
+          <div class="settings-meta">忘记密码时可在服务器对应目录删除 config.auth.json 后重启应用恢复访问。</div>
+        </div>
+        <div id="authEnabledControls" hidden>
+          <div class="settings-grid">
+            <label class="settings-field">
+              <span>当前密码</span>
+              <input class="modal-input" type="password" id="authCurrentPasswordInput" autocomplete="current-password">
+            </label>
+            <label class="settings-field">
+              <span>新密码</span>
+              <input class="modal-input" type="password" id="authNewPassword2Input" autocomplete="new-password" placeholder="至少 6 个字符">
+            </label>
+            <label class="settings-field">
+              <span>确认新密码</span>
+              <input class="modal-input" type="password" id="authNewPasswordConfirmInput" autocomplete="new-password" placeholder="再次输入以确认">
+            </label>
+          </div>
+          <div class="settings-actions-inline">
+            <button class="modal-btn primary" id="authChangeBtn" onclick="changeAuthPasswordFromSettings()">修改密码</button>
+            <button class="modal-btn" id="authLogoutBtn" onclick="logoutFromSettings()">退出登录</button>
+            <button class="modal-btn cancel" id="authDisableBtn" onclick="disableAuthFromSettings()">关闭密码保护</button>
+            <span class="settings-result" id="authManageResult"></span>
+          </div>
+          <div class="settings-meta">修改或关闭密码会使所有已登录设备的会话立即失效并要求重新登录。退出登录只清除当前设备的登录状态，「记住设备」期间其它浏览器仍保持登录。</div>
+        </div>
+      </div>
+    </details>
+
     <div class="settings-footer-actions">
       <button class="modal-btn cancel" onclick="closeSettingsModal()">关闭</button>
       <button class="modal-btn primary" id="saveSettingsBtn" onclick="saveSettings()">保存配置</button>
@@ -3204,6 +3386,34 @@
     <div class="modal-actions">
       <button class="modal-btn primary" onclick="closeHelpModal()">关闭</button>
     </div>
+  </div>
+</div>
+
+<!-- 访问保护登录遮罩：未通过校验时接管整个页面 -->
+<div class="modal-overlay auth-gate-overlay" id="authGate" role="dialog" aria-modal="true" aria-labelledby="authGateTitle" aria-describedby="authGateDesc">
+  <div class="modal auth-gate-modal">
+    <div class="auth-gate-brand">
+      <svg class="auth-gate-logo" viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="14" fill="var(--accent)"/>
+        <rect x="16" y="26" width="32" height="24" rx="5" fill="#fff"/>
+        <rect x="22" y="32" width="20" height="3.6" rx="1.8" fill="var(--accent)"/>
+        <rect x="22" y="39" width="13" height="3.6" rx="1.8" fill="var(--accent)"/>
+        <rect x="22" y="46" width="16" height="3.6" rx="1.8" fill="var(--accent)"/>
+      </svg>
+      <span class="auth-gate-app-name">Personal Todo Vault</span>
+    </div>
+    <h2 class="auth-gate-title" id="authGateTitle">输入访问密码解锁</h2>
+    <p class="auth-gate-desc" id="authGateDesc">本实例已开启访问保护，密码只保存在服务器。</p>
+    <div class="auth-gate-field">
+      <span class="auth-gate-lock" aria-hidden="true">🔒</span>
+      <input class="auth-gate-input" type="password" id="authPasswordInput" placeholder="访问密码" autocomplete="current-password" aria-label="访问密码">
+    </div>
+    <label class="auth-gate-remember">
+      <input type="checkbox" id="authRememberToggle" checked>
+      <span>30 天内记住这台设备</span>
+    </label>
+    <div class="auth-gate-error" id="authGateError" role="alert" aria-live="polite"></div>
+    <button class="modal-btn primary auth-gate-btn" id="authLoginBtn" onclick="authLogin()">解锁</button>
   </div>
 </div>
 

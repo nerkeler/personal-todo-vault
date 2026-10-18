@@ -9,7 +9,7 @@ RUN apt-get update \
     && npm ci --omit=dev \
     && npm cache clean --force
 
-COPY index.html USAGE.md server.js sqlite.js appConfig.js cloudBackup.js email.js migrate.js restore.js sql-wasm.js sql-wasm.wasm ./
+COPY index.html app.js USAGE.md server.js sqlite.js appConfig.js cloudBackup.js email.js auth.js manageAuth.js migrate.js restore.js sql-wasm.js sql-wasm.wasm ./
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
