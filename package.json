@@ -15,7 +15,7 @@
     "restore": "node restore.js",
     "auth:manage": "node manageAuth.js",
     "test:release": "node test/release-regression.cjs",
-    "check": "node --check server.js && node --check app.js && node --check auth.js && node --check manageAuth.js"
+    "check": "node --check server.js && node --check auth.js && node --check manageAuth.js && node --check app.core.js && node --check app.theme.js && node --check app.settings.js && node --check app.categories.js && node --check app.calendar.js && node --check app.todos.js && node --check app.reminder.js && node --check app.notes.js"
   },
   "engines": {
     "node": ">=22"

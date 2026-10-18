@@ -752,13 +752,25 @@ async function testCloudBackup() {
 
 async function testFrontend() {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-  const appJs = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
-  // Markup, styles, and inline event handlers stay in index.html; interactive
-  // logic lives in app.js. Code-level assertions must therefore sweep both.
-  const source = html + appJs;
+  // 标记、样式与内联事件留在 index.html；交互逻辑按域拆分成 app.*.js，
+  // 依序加载并共享全局作用域。代码级断言须同时覆盖 HTML 与全部脚本。
+  const frontendFiles = [
+    'app.core.js', 'app.theme.js', 'app.settings.js', 'app.categories.js',
+    'app.calendar.js', 'app.todos.js', 'app.reminder.js', 'app.notes.js',
+  ];
+  const scriptBodies = frontendFiles.map(name => {
+    const body = fs.readFileSync(path.join(ROOT, name), 'utf8').split('\n').slice(2).join('\n');
+    assert(body.trim(), `${name} 不应为空文件`);
+    return body;
+  });
+  const source = html + scriptBodies.join('\n');
+  const appJs = scriptBodies.join('\n');
   new Function(appJs);
-  assert.match(source, /<script src="\/app\.js"><\/script>/, '页面应加载外部 app.js 脚本');
-  assert.doesNotMatch(source, /<script src="\/app\.js"><\/script>[\s\S]{0,40}<\/script>/, '页面不应残留内联脚本');
+  for (const name of frontendFiles) {
+    assert.match(html, new RegExp(`<script src="/${name.replace(/\./g, String.raw`\.`)}">`),
+      `页面应按序加载 ${name}`);
+  }
+  assert.doesNotMatch(html, /fonts\.googleapis\.com|fonts\.gstatic\.com/, '页面不得再引用外链字体');
   assert.doesNotMatch(source, /id="themeSettingsSection"[^>]*\bopen\b/, '配置分组默认不应展开');
   assert.match(source, /resetSettingsDisclosure\(\)/, '打开配置中心前应重置为折叠状态');
   assert.match(source, /class="todo-priority-tag priority-/, '待办应展示重要程度标签');

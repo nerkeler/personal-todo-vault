@@ -210,7 +210,7 @@ TODO_DATA_DIR=/data npm run migrate
 
 | 层级 | 实现 |
 |---|---|
-| 前端 | 单文件原生 HTML、CSS、JavaScript |
+| 前端 | 无框架 HTML、CSS 与按域拆分的原生 JavaScript |
 | 服务端 | Node.js 原生 `http` 模块 |
 | 数据库 | `sql.js` / SQLite WebAssembly |
 | 邮件 | `nodemailer` |
@@ -220,7 +220,14 @@ TODO_DATA_DIR=/data npm run migrate
 ```text
 personal-todo-vault/
 ├── index.html              # 页面、样式与布局
-├── app.js                  # 前端交互逻辑
+├── app.core.js             # 前端核心：状态、启动链、弹窗 / toast
+├── app.theme.js            # 外观主题（手动 / 系统 / 按时间）
+├── app.settings.js         # 配置中心（邮件与坚果云）
+├── app.categories.js       # 分类侧栏与弹窗
+├── app.calendar.js         # 月视图与时间选择器
+├── app.todos.js            # 待办卡片、行内编辑与进度
+├── app.reminder.js         # 任务提醒弹窗
+├── app.notes.js            # 笔记弹窗与 Markdown 渲染器
 ├── server.js               # HTTP API、提醒和备份调度
 ├── sqlite.js               # SQLite 初始化与原子保存
 ├── appConfig.js            # 本地配置加密与脱敏输出

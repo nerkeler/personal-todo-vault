@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>待办清单</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27><rect width=%2764%27 height=%2764%27 rx=%2712%27 fill=%27%2310b981%27/><rect x=%2714%27 y=%2722%27 width=%2736%27 height=%2730%27 rx=%274%27 fill=%27white%27/><rect x=%2720%27 y=%2728%27 width=%2724%27 height=%274%27 rx=%272%27 fill=%27%2310b981%27/><rect x=%2720%27 y=%2736%27 width=%2716%27 height=%274%27 rx=%272%27 fill=%27%2310b981%27/><rect x=%2720%27 y=%2744%27 width=%2720%27 height=%274%27 rx=%272%27 fill=%27%2310b981%27/></svg>" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg: #f0f2f5;
@@ -54,7 +51,7 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      font-family: 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+      font-family: 'PingFang SC', 'Hiragino Sans GB', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
@@ -3417,7 +3414,15 @@
   </div>
 </div>
 
-<script src="/app.js"></script>
+<!-- 前端按逻辑拆分为多个经典 script，依序加载并共享全局作用域 -->
+<script src="/app.core.js"></script>
+<script src="/app.theme.js"></script>
+<script src="/app.settings.js"></script>
+<script src="/app.categories.js"></script>
+<script src="/app.calendar.js"></script>
+<script src="/app.todos.js"></script>
+<script src="/app.reminder.js"></script>
+<script src="/app.notes.js"></script>
 
 </body>
 </html>
